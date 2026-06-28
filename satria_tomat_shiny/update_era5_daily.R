@@ -172,8 +172,15 @@ fallback_path <- file.path(app_dir, "cache", "era5_daily.rds")
 existing <- read_cache_data(cache_path)
 if (!valid_climate_frame(existing)) existing <- read_cache_data(fallback_path)
 
-start_date <- if (valid_climate_frame(existing)) min(max(existing$tanggal, na.rm = TRUE) + 1, max(market_dates, na.rm = TRUE)) else min(market_dates, na.rm = TRUE)
 end_date <- max(market_dates, na.rm = TRUE)
+recent_days <- suppressWarnings(as.integer(Sys.getenv("ERA5_CDS_RECENT_DAYS", "45")))
+if (is.na(recent_days) || recent_days < 7) recent_days <- 45
+recent_start <- max(min(market_dates, na.rm = TRUE), end_date - recent_days + 1)
+start_date <- if (valid_climate_frame(existing)) {
+  max(min(max(existing$tanggal, na.rm = TRUE) + 1, end_date), recent_start)
+} else {
+  recent_start
+}
 
 if (start_date > end_date) {
   message("ERA5 cache sudah up to date sampai ", as.character(end_date), ".")

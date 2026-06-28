@@ -11,6 +11,7 @@ permissions:
 jobs:
   refresh-caches:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -66,6 +67,7 @@ jobs:
           cat > satria_tomat_shiny/.Renviron.github <<EOF
           CDSAPIRC_PATH=satria_tomat_shiny/.cdsapirc
           PYTHON_EXE=${PYTHON_EXE}
+          ERA5_CDS_RECENT_DAYS=45
           BMKG_ADM4=${BMKG_ADM4:-36.72.07.1001}
           BMKG_FORECAST_DAYS=${BMKG_FORECAST_DAYS:-4}
           GDRIVE_RDS_ID=${GDRIVE_RDS_ID}
