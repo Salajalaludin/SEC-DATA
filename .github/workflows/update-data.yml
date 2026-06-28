@@ -1,0 +1,95 @@
+name: Update Market and Climate Caches
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 */6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-caches:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      BMKG_ADM4: ${{ secrets.BMKG_ADM4 }}
+      BMKG_FORECAST_DAYS: ${{ secrets.BMKG_FORECAST_DAYS }}
+      GDRIVE_RDS_ID: ${{ secrets.GDRIVE_RDS_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-dev libcurl4-openssl-dev libssl-dev libgdal-dev libgeos-dev libproj-dev libudunits2-dev
+
+      - name: Install R packages
+        run: |
+          Rscript -e "install.packages(c('readxl','terra','forecast','xgboost','xml2','rvest','jsonlite'), repos='https://cloud.r-project.org')"
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cdsapi
+
+      - name: Write .cdsapirc from GitHub Secrets
+        run: |
+          cat > satria_tomat_shiny/.cdsapirc <<EOF
+          url: ${{ secrets.CDSAPI_URL }}
+          key: ${{ secrets.CDSAPI_KEY }}
+          EOF
+
+      - name: Write .Renviron overrides
+        run: |
+          cat > satria_tomat_shiny/.Renviron.github <<EOF
+          CDSAPIRC_PATH=satria_tomat_shiny/.cdsapirc
+          PYTHON_EXE=python
+          BMKG_ADM4=${BMKG_ADM4:-36.72.07.1001}
+          BMKG_FORECAST_DAYS=${BMKG_FORECAST_DAYS:-4}
+          GDRIVE_RDS_ID=${GDRIVE_RDS_ID}
+          EOF
+
+      - name: Merge runtime environment
+        run: |
+          cat satria_tomat_shiny/.Renviron.github >> satria_tomat_shiny/.Renviron
+
+      - name: Update SAGON cache
+        run: |
+          Rscript satria_tomat_shiny/update_sagon_daily.R
+
+      - name: Update BMKG cache
+        run: |
+          Rscript satria_tomat_shiny/update_bmkg_forecast.R
+
+      - name: Update ERA5 cache
+        run: |
+          Rscript satria_tomat_shiny/update_era5_daily.R
+
+      - name: Commit updated caches
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add satria_tomat_shiny/cache/*.rds
+          git add satria_tomat_shiny/cache/era5_cds_nc || true
+          if git diff --cached --quiet; then
+            echo "No cache changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: refresh market and climate caches"
+          git push
