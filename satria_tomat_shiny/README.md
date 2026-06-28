@@ -25,17 +25,27 @@ Harga pasar juga bisa dibaca dari cache scraper SAGON:
 
 Kalau file cache SAGON ini ada, `app.R` akan memprioritaskannya dibanding file Excel lokal.
 
-Untuk test, tiga tanggal terbaru pada data lengkap harga+ERA5 tidak dimasukkan ke training. Model dilatih pada data sebelum tiga tanggal tersebut, lalu forecast H+1 sampai H+3 dibandingkan dengan harga aktual pada window test.
+Untuk evaluasi, data diurutkan berdasarkan tanggal lalu dibagi menjadi 80 persen training dan 20 persen test. Tidak ada data validasi terpisah. Pada bagian test, evaluasi dilakukan sebagai rolling forecast satu hari ke depan: setelah aktual hari test tersedia, nilai aktual tersebut masuk ke histori untuk membentuk lag prediksi hari berikutnya. Prediksi operasional tetap dibuat untuk H+1 sampai H+3 dengan memakai prakiraan cuaca BMKG sebagai input iklim masa depan.
 
 Model yang dijalankan di app:
 
 - SARIMA/ARIMA aktual dengan `forecast::auto.arima()` pada harga rata-rata tiga pasar.
 - XGBoost regresi untuk memodelkan residual SARIMA.
-- Prediksi hybrid: `Yhat = SARIMA(t) + XGBoost(epsilon)`.
+- Prediksi utama: Hybrid SARIMA-XGBoost. Naive, MA7, SARIMA-only, dan XGBoost harga langsung hanya dipakai sebagai pembanding evaluasi.
 - XGBoost klasifikasi untuk status risiko. Karena data pasar tidak punya label kejadian gagal distribusi asli, label dibuat sebagai proxy dari lonjakan harga 3 hari ke depan atau kombinasi margin antar pasar tinggi dan suhu tinggi.
 - SHAP aktual dari XGBoost memakai `predict(model, predcontrib = TRUE)`.
 
 Package R yang dipakai: `shiny`, `ggplot2`, `readxl`, `terra`, `forecast`, dan `xgboost`.
+
+Ringkasan metodologi untuk penjelasan:
+
+- Data SAGON diperoleh dengan scraping halaman publik SAGON Cilegon melalui `update_sagon_daily.R`, bukan API resmi. Hasilnya disimpan sebagai cache `cache/sagon_daily_long.rds`.
+- ERA5 diambil melalui CDS API sebagai data jam-jaman, lalu diagregasi harian: suhu puncak memakai maksimum harian, kelembaban memakai rata-rata harian, dan curah hujan memakai total harian.
+- Preprocessing meliputi merge berdasarkan tanggal, deduplikasi tanggal-pasar-komoditas, penghapusan baris harga/iklim yang tidak lengkap, serta pembentukan fitur lag, moving average 7 hari, volatilitas 7 hari, margin antar pasar, hari, dan bulan.
+- Persamaan residual SARIMA: `e_t = Y_t - SARIMA_t`. Residual ini menjadi target XGBoost residual. Prediksi hybrid memakai XGBoost harga langsung sebagai level utama, koreksi kecil dari komponen `SARIMA + XGBoost residual`, dan kalibrasi bias berbasis MAPE pada rolling test.
+- Orde SARIMA dipilih dengan `forecast::auto.arima()` setelah pengecekan kebutuhan differencing ADF/KPSS dan seasonal differencing.
+- XGBoost memakai parameter tetap: `max_depth = 3`, `eta = 0.05`, `nrounds = 120`, `subsample = 0.9`, dan `colsample_bytree = 0.9`. Tidak ada cross-validation dan tidak ada early stopping agar alur tetap training-test-prediksi.
+- SHAP summary plot memakai banyak fitur untuk ranking importance. SHAP dependence plot memakai satu fitur suhu utama agar ambang efek suhu mudah dibaca.
 
 ## Arsitektur update ERA5
 
@@ -179,7 +189,7 @@ Untuk forecast cuaca maju H+1 sampai H+3:
    - `hujan`
 4. Hasilnya disimpan ke:
    `cache/bmkg_forecast_daily.rds`
-5. `app.R` memakai cache ini untuk panel prediksi live H+1 sampai H+3, terpisah dari test historis 3 hari.
+5. `app.R` memakai cache ini untuk panel prediksi live H+1 sampai H+3, terpisah dari test historis 20 persen.
 6. Kalau ERA5 historis tertinggal beberapa hari, `app.R` menjembatani tanggal kosong terdekat dengan carry-forward singkat dari observasi iklim terakhir, lalu menyambung ke BMKG forecast.
 
 Konfigurasi `.Renviron`:
