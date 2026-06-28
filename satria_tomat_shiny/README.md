@@ -25,7 +25,7 @@ Harga pasar juga bisa dibaca dari cache scraper SAGON:
 
 Kalau file cache SAGON ini ada, `app.R` akan memprioritaskannya dibanding file Excel lokal.
 
-Untuk validasi, tiga tanggal terbaru pada data lengkap harga+ERA5 tidak dimasukkan ke training. Model dilatih pada data sebelum tiga tanggal tersebut, lalu forecast H+1 sampai H+3 dibandingkan dengan harga aktual pada window validasi.
+Untuk test, tiga tanggal terbaru pada data lengkap harga+ERA5 tidak dimasukkan ke training. Model dilatih pada data sebelum tiga tanggal tersebut, lalu forecast H+1 sampai H+3 dibandingkan dengan harga aktual pada window test.
 
 Model yang dijalankan di app:
 
@@ -179,7 +179,7 @@ Untuk forecast cuaca maju H+1 sampai H+3:
    - `hujan`
 4. Hasilnya disimpan ke:
    `cache/bmkg_forecast_daily.rds`
-5. `app.R` memakai cache ini untuk panel prediksi live H+1 sampai H+3, terpisah dari backtest historis 3 hari.
+5. `app.R` memakai cache ini untuk panel prediksi live H+1 sampai H+3, terpisah dari test historis 3 hari.
 6. Kalau ERA5 historis tertinggal beberapa hari, `app.R` menjembatani tanggal kosong terdekat dengan carry-forward singkat dari observasi iklim terakhir, lalu menyambung ke BMKG forecast.
 
 Konfigurasi `.Renviron`:

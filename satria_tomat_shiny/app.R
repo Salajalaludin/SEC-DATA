@@ -16,7 +16,7 @@ app_renviron <- file.path(app_start_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)
 
 bandung_cilegon_extent <- terra::ext(105.85, 107.85, -7.30, -5.80)
-validation_days <- 3
+test_days <- 3
 ## Default auto-refresh interval: once per day (24 hours = 86,400,000 ms).
 ## Can be overridden via environment var `REFRESH_INTERVAL_MS` (milliseconds).
 refresh_interval_ms <- as.integer(Sys.getenv("REFRESH_INTERVAL_MS", "86400000"))
@@ -793,7 +793,7 @@ predict_future_path <- function(fit_obj, history_avg, future_climate) {
   )
 }
 
-build_live_future_climate <- function(avg, bmkg_forecast, horizon = validation_days) {
+build_live_future_climate <- function(avg, bmkg_forecast, horizon = test_days) {
   if (is.data.frame(bmkg_forecast) && nrow(bmkg_forecast) > 0) {
     future <- bmkg_forecast[bmkg_forecast$tanggal > max(avg$tanggal), c("tanggal", "suhu_puncak", "kelembaban", "hujan"), drop = FALSE]
     future <- future[order(future$tanggal), ]
@@ -823,58 +823,58 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
   avg <- prepare_avg_frame(df)
   if (nrow(avg) < 14) stop("Data hasil merge terlalu sedikit untuk dashboard.", call. = FALSE)
 
-  validation_dates <- tail(sort(unique(avg$tanggal)), validation_days)
-  train_avg <- avg[!avg$tanggal %in% validation_dates, ]
-  validation_frame <- avg[avg$tanggal %in% validation_dates, ]
+  test_dates <- tail(sort(unique(avg$tanggal)), test_days)
+  train_avg <- avg[!avg$tanggal %in% test_dates, ]
+  test_frame <- avg[avg$tanggal %in% test_dates, ]
   train_avg <- train_avg[order(train_avg$tanggal), ]
-  validation_frame <- validation_frame[order(validation_frame$tanggal), ]
-  if (nrow(validation_frame) != validation_days) stop("Data validasi 3 hari terbaru tidak lengkap.", call. = FALSE)
+  test_frame <- test_frame[order(test_frame$tanggal), ]
+  if (nrow(test_frame) != test_days) stop("Data test 3 hari terbaru tidak lengkap.", call. = FALSE)
 
   eval_fit <- fit_pipeline_models(train_avg)
-  validation_core <- predict_future_path(eval_fit, train_avg, validation_frame)
-  validation_result <- data.frame(
-    tanggal = as.Date(validation_core$tanggal),
-    harga_aktual = as.numeric(validation_frame$harga),
-    sarima = validation_core$sarima,
-    xgb_residual = validation_core$xgb_residual,
-    prediksi_hybrid = validation_core$prediksi_hybrid,
-    error = as.numeric(validation_frame$harga - validation_core$prediksi_hybrid),
-    ape = abs(as.numeric(validation_frame$harga - validation_core$prediksi_hybrid)) / pmax(as.numeric(validation_frame$harga), 1),
-    risk_prob = validation_core$risk_prob,
-    status = validation_core$status,
+  test_core <- predict_future_path(eval_fit, train_avg, test_frame)
+  test_result <- data.frame(
+    tanggal = as.Date(test_core$tanggal),
+    harga_aktual = as.numeric(test_frame$harga),
+    sarima = test_core$sarima,
+    xgb_residual = test_core$xgb_residual,
+    prediksi_hybrid = test_core$prediksi_hybrid,
+    error = as.numeric(test_frame$harga - test_core$prediksi_hybrid),
+    ape = abs(as.numeric(test_frame$harga - test_core$prediksi_hybrid)) / pmax(as.numeric(test_frame$harga), 1),
+    risk_prob = test_core$risk_prob,
+    status = test_core$status,
     stringsAsFactors = FALSE
   )
   baseline_forecasts <- list(
-    Naive = rep(tail(eval_fit$model_frame$harga, 1), validation_days),
-    MA7 = rep(mean(tail(eval_fit$model_frame$harga, 7), na.rm = TRUE), validation_days),
-    `SARIMA-only` = validation_core$sarima,
-    Hybrid = validation_core$prediksi_hybrid
+    Naive = rep(tail(eval_fit$model_frame$harga, 1), test_days),
+    MA7 = rep(mean(tail(eval_fit$model_frame$harga, 7), na.rm = TRUE), test_days),
+    `SARIMA-only` = test_core$sarima,
+    Hybrid = test_core$prediksi_hybrid
   )
-  holdout_metrics <- do.call(rbind, lapply(names(baseline_forecasts), function(name) {
-    out <- model_metrics(validation_result$harga_aktual, baseline_forecasts[[name]])
+  test_metrics <- do.call(rbind, lapply(names(baseline_forecasts), function(name) {
+    out <- model_metrics(test_result$harga_aktual, baseline_forecasts[[name]])
     out$model <- name
     out
   }))
-  holdout_metrics <- holdout_metrics[, c("model", "MAE", "RMSE", "MAPE")]
+  test_metrics <- test_metrics[, c("model", "MAE", "RMSE", "MAPE")]
 
   rolling_frame <- tail(eval_fit$model_frame, min(60, nrow(eval_fit$model_frame)))
-  rolling_long <- rbind(
+  rolling_test_long <- rbind(
     data.frame(tanggal = rolling_frame$tanggal, model = "Naive", actual = rolling_frame$harga, predicted = rolling_frame$harga_kemarin),
     data.frame(tanggal = rolling_frame$tanggal, model = "MA7", actual = rolling_frame$harga, predicted = rolling_frame$ma7),
     data.frame(tanggal = rolling_frame$tanggal, model = "SARIMA-only", actual = rolling_frame$harga, predicted = rolling_frame$sarima),
     data.frame(tanggal = rolling_frame$tanggal, model = "Hybrid", actual = rolling_frame$harga, predicted = rolling_frame$hybrid)
   )
-  rolling_long$error <- rolling_long$actual - rolling_long$predicted
-  rolling_long$ape <- abs(rolling_long$error) / pmax(abs(rolling_long$actual), 1)
-  rolling_metrics <- do.call(rbind, lapply(split(rolling_long, rolling_long$model), function(dat) {
+  rolling_test_long$error <- rolling_test_long$actual - rolling_test_long$predicted
+  rolling_test_long$ape <- abs(rolling_test_long$error) / pmax(abs(rolling_test_long$actual), 1)
+  rolling_test_metrics <- do.call(rbind, lapply(split(rolling_test_long, rolling_test_long$model), function(dat) {
     out <- model_metrics(dat$actual, dat$predicted)
     out$model <- unique(dat$model)
     out
   }))
-  rolling_metrics <- rolling_metrics[, c("model", "MAE", "RMSE", "MAPE")]
+  rolling_test_metrics <- rolling_test_metrics[, c("model", "MAE", "RMSE", "MAPE")]
 
   live_fit <- fit_pipeline_models(avg)
-  live_input <- build_live_future_climate(avg, bmkg_forecast, validation_days)
+  live_input <- build_live_future_climate(avg, bmkg_forecast, test_days)
   live_forecast <- predict_future_path(live_fit, avg, live_input)
   last_actual_risk <- tail(live_fit$model_frame$risk_prob, 1)
   forecast_data <- data.frame(
@@ -920,10 +920,10 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
     ),
     forecast = forecast_data,
     live_forecast = live_forecast,
-    validation = validation_result,
-    holdout_metrics = holdout_metrics,
-    rolling_metrics = rolling_metrics,
-    rolling_long = rolling_long,
+    test = test_result,
+    test_metrics = test_metrics,
+    rolling_test_metrics = rolling_test_metrics,
+    rolling_test_long = rolling_test_long,
     best_tune = live_fit$best_tune,
     shap_reg_summary = live_fit$shap_reg_summary,
     shap_cls_summary = live_fit$shap_cls_summary,
@@ -945,10 +945,10 @@ build_dashboard_state <- function(commodity = NULL) {
     pipeline_data = pipeline_data,
     forecast_data = pipeline$forecast,
     live_forecast_data = pipeline$live_forecast,
-    validation_data = pipeline$validation,
-    holdout_metrics = pipeline$holdout_metrics,
-    rolling_metrics = pipeline$rolling_metrics,
-    rolling_long = pipeline$rolling_long,
+    test_data = pipeline$test,
+    test_metrics = pipeline$test_metrics,
+    rolling_test_metrics = pipeline$rolling_test_metrics,
+    rolling_test_long = pipeline$rolling_test_long,
     best_tune = pipeline$best_tune,
     shap_reg_summary = pipeline$shap_reg_summary,
     shap_cls_summary = pipeline$shap_cls_summary,
@@ -1129,20 +1129,20 @@ ui <- fluidPage(
       "Evaluasi Model",
       fluidRow(
         column(6, div(class = "card",
-          div("Holdout 3 hari terbaru", class = "section-title"),
-          div("Perbandingan model pada data yang tidak masuk training", class = "section-subtitle"),
-          tableOutput("holdoutMetrics")
+          div("Test 3 hari terbaru", class = "section-title"),
+          div("Perbandingan model pada data test yang tidak masuk training", class = "section-subtitle"),
+          tableOutput("testMetrics")
         )),
         column(6, div(class = "card",
-          div("Rolling backtest", class = "section-title"),
-          div("Ringkasan 60 titik latih terakhir untuk melihat stabilitas error", class = "section-subtitle"),
-          tableOutput("rollingMetrics")
+          div("Test historis bergulir", class = "section-title"),
+          div("Ringkasan 60 titik training terakhir untuk melihat stabilitas error model", class = "section-subtitle"),
+          tableOutput("rollingTestMetrics")
         ))
       ),
       div(class = "card",
-        div("Error rolling validation", class = "section-title"),
+        div("Error test historis", class = "section-title"),
         div("Absolute percentage error per tanggal untuk baseline dan model hybrid", class = "section-subtitle"),
-        plotOutput("rollingPlot", height = 300)
+        plotOutput("rollingTestPlot", height = 300)
       ),
       div(class = "card",
         div("Konfigurasi tuning XGBoost residual", class = "section-title"),
@@ -1336,10 +1336,10 @@ server <- function(input, output, session) {
     refresh_key()
     risk_3day <- max(live_forecast_data$risk_prob, na.rm = TRUE)
     status <- as.character(cut(risk_3day, breaks = c(-Inf, 0.45, 0.70, Inf), labels = c("Aman", "Waspada", "Darurat")))
-    validation_mape <- mean(validation_data$ape, na.rm = TRUE)
+    test_mape <- mean(test_data$ape, na.rm = TRUE)
     HTML(sprintf(
-      "<div class='status-pill %s'>%s</div><p style='margin-top:12px;color:#f5f2e8;font-weight:700;'>Probabilitas gagal distribusi tertinggi %.0f%% pada forecast H+1 sampai H+3</p><p style='color:#c8c7bc;'>MAPE backtest 3 hari: <b>%.1f%%</b>. Variabel pemicu utama dibaca dari SHAP model klasifikasi.</p>",
-      status, status, 100 * risk_3day, 100 * validation_mape
+      "<div class='status-pill %s'>%s</div><p style='margin-top:12px;color:#f5f2e8;font-weight:700;'>Probabilitas gagal distribusi tertinggi %.0f%% pada prediksi H+1 sampai H+3</p><p style='color:#c8c7bc;'>MAPE test 3 hari: <b>%.1f%%</b>. Variabel pemicu utama dibaca dari SHAP model klasifikasi.</p>",
+      status, status, 100 * risk_3day, 100 * test_mape
     ))
   })
 
@@ -1367,41 +1367,41 @@ server <- function(input, output, session) {
   output$hybridPlot <- renderPlot({
     refresh_key()
     df <- tail(pipeline_data, 45)
-    val <- validation_data
+    tst <- test_data
     ggplot(df, aes(tanggal)) +
       geom_line(aes(y = harga, color = "Observasi"), linewidth = 1) +
       geom_line(aes(y = sarima, color = "SARIMA"), linewidth = 0.9) +
       geom_line(aes(y = hybrid, color = "Hybrid"), linewidth = 1.1) +
       geom_vline(xintercept = as.numeric(max(df$tanggal)), linetype = 2, color = "#8a8c84") +
-      geom_line(data = val, aes(tanggal, prediksi_hybrid, color = "Forecast validasi"), linewidth = 1.1, inherit.aes = FALSE) +
-      geom_point(data = val, aes(tanggal, harga_aktual, color = "Aktual validasi"), size = 2.8, inherit.aes = FALSE) +
-      scale_color_manual(values = c("Observasi" = "#f5f2e8", "SARIMA" = "#b2a7ff", "Hybrid" = "#f5a623", "Forecast validasi" = "#f5a623", "Aktual validasi" = "#61c9a8")) +
+      geom_line(data = tst, aes(tanggal, prediksi_hybrid, color = "Prediksi test"), linewidth = 1.1, inherit.aes = FALSE) +
+      geom_point(data = tst, aes(tanggal, harga_aktual, color = "Aktual test"), size = 2.8, inherit.aes = FALSE) +
+      scale_color_manual(values = c("Observasi" = "#f5f2e8", "SARIMA" = "#b2a7ff", "Hybrid" = "#f5a623", "Prediksi test" = "#f5a623", "Aktual test" = "#61c9a8")) +
       scale_y_continuous(labels = rupiah) +
       labs(x = NULL, y = "Harga") +
       theme_dark_cilegon()
   })
 
-  output$holdoutMetrics <- renderTable({
+  output$testMetrics <- renderTable({
     refresh_key()
-    shown <- holdout_metrics
+    shown <- test_metrics
     shown$MAE <- rupiah(shown$MAE)
     shown$RMSE <- rupiah(shown$RMSE)
     shown$MAPE <- sprintf("%.2f%%", 100 * shown$MAPE)
     shown
   }, striped = FALSE, bordered = FALSE, spacing = "s")
 
-  output$rollingMetrics <- renderTable({
+  output$rollingTestMetrics <- renderTable({
     refresh_key()
-    shown <- rolling_metrics
+    shown <- rolling_test_metrics
     shown$MAE <- rupiah(shown$MAE)
     shown$RMSE <- rupiah(shown$RMSE)
     shown$MAPE <- sprintf("%.2f%%", 100 * shown$MAPE)
     shown
   }, striped = FALSE, bordered = FALSE, spacing = "s")
 
-  output$rollingPlot <- renderPlot({
+  output$rollingTestPlot <- renderPlot({
     refresh_key()
-    ggplot(rolling_long, aes(tanggal, 100 * ape, color = model)) +
+    ggplot(rolling_test_long, aes(tanggal, 100 * ape, color = model)) +
       geom_line(linewidth = 0.8, alpha = 0.85) +
       geom_point(size = 1.2, alpha = 0.7) +
       scale_color_manual(values = c("Naive" = "#8a8c84", "MA7" = "#61c9a8", "SARIMA-only" = "#b2a7ff", "Hybrid" = "#f5a623")) +
@@ -1474,20 +1474,20 @@ server <- function(input, output, session) {
       status = train_shown$status,
       stringsAsFactors = FALSE
     )
-    validation_table <- data.frame(
-      set = "validasi 3 hari",
-      tanggal = format_tanggal(validation_data$tanggal),
+    test_table <- data.frame(
+      set = "test 3 hari",
+      tanggal = format_tanggal(test_data$tanggal),
       sumber_iklim = "ERA5",
-      harga_aktual = rupiah(validation_data$harga_aktual),
-      sarima = rupiah(validation_data$sarima),
-      xgb_residual = rupiah(validation_data$xgb_residual),
-      prediksi_hybrid = rupiah(validation_data$prediksi_hybrid),
-      error = rupiah(validation_data$error),
-      risiko = sprintf("%.0f%%", 100 * validation_data$risk_prob),
-      status = validation_data$status,
+      harga_aktual = rupiah(test_data$harga_aktual),
+      sarima = rupiah(test_data$sarima),
+      xgb_residual = rupiah(test_data$xgb_residual),
+      prediksi_hybrid = rupiah(test_data$prediksi_hybrid),
+      error = rupiah(test_data$error),
+      risiko = sprintf("%.0f%%", 100 * test_data$risk_prob),
+      status = test_data$status,
       stringsAsFactors = FALSE
     )
-    rbind(train_table, validation_table)
+    rbind(train_table, test_table)
   }, striped = FALSE, bordered = FALSE, spacing = "s")
 }
 
