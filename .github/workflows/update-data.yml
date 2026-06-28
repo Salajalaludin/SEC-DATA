@@ -34,6 +34,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Pin Python executable
+        run: |
+          echo "PYTHON_EXE=$(which python)" >> "$GITHUB_ENV"
+          "$(which python)" -c "import sys; print(sys.executable)"
+
       - name: Install system libraries
         run: |
           sudo apt-get update
@@ -45,9 +50,9 @@ jobs:
 
       - name: Install Python packages
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install cdsapi
-          python -c "import cdsapi; print('cdsapi OK')"
+          "${PYTHON_EXE}" -m pip install --upgrade pip
+          "${PYTHON_EXE}" -m pip install cdsapi
+          "${PYTHON_EXE}" -c "import sys, cdsapi; print(sys.executable); print('cdsapi OK')"
 
       - name: Write .cdsapirc from GitHub Secrets
         run: |
@@ -60,7 +65,7 @@ jobs:
         run: |
           cat > satria_tomat_shiny/.Renviron.github <<EOF
           CDSAPIRC_PATH=satria_tomat_shiny/.cdsapirc
-          PYTHON_EXE=$(which python)
+          PYTHON_EXE=${PYTHON_EXE}
           BMKG_ADM4=${BMKG_ADM4:-36.72.07.1001}
           BMKG_FORECAST_DAYS=${BMKG_FORECAST_DAYS:-4}
           GDRIVE_RDS_ID=${GDRIVE_RDS_ID}
