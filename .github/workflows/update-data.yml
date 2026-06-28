@@ -68,6 +68,7 @@ jobs:
           CDSAPIRC_PATH=satria_tomat_shiny/.cdsapirc
           PYTHON_EXE=${PYTHON_EXE}
           ERA5_CDS_RECENT_DAYS=45
+          ERA5_CDS_LAG_DAYS=5
           BMKG_ADM4=${BMKG_ADM4:-36.72.07.1001}
           BMKG_FORECAST_DAYS=${BMKG_FORECAST_DAYS:-4}
           GDRIVE_RDS_ID=${GDRIVE_RDS_ID}
@@ -93,8 +94,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add satria_tomat_shiny/cache/*.rds
-          git add satria_tomat_shiny/cache/era5_cds_nc || true
+          git add -f satria_tomat_shiny/cache/sagon_daily_long.rds
+          git add -f satria_tomat_shiny/cache/bmkg_forecast_daily.rds
+          git add -f satria_tomat_shiny/cache/era5_daily.rds
+          git add -f satria_tomat_shiny/cache/era5_daily_bandung_cilegon.rds
           if git diff --cached --quiet; then
             echo "No cache changes to commit."
             exit 0

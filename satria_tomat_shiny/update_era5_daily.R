@@ -165,6 +165,11 @@ if (is.na(market_path) || !nzchar(market_path)) stop("File komoditas referensi u
 market_sheets <- readxl::excel_sheets(market_path)
 market_dates <- do.call(c, lapply(market_sheets, function(sheet) as.Date(readxl::read_excel(market_path, sheet = sheet)[["Tanggal"]])))
 market_dates <- market_dates[!is.na(market_dates)]
+sagon_cache <- read_cache_data(file.path(app_dir, "cache", "sagon_daily_long.rds"))
+if (is.data.frame(sagon_cache) && "tanggal" %in% names(sagon_cache)) {
+  market_dates <- c(market_dates, as.Date(sagon_cache$tanggal))
+  market_dates <- market_dates[!is.na(market_dates)]
+}
 if (length(market_dates) == 0) stop("Tidak ada tanggal valid pada file komoditas.", call. = FALSE)
 
 cache_path <- file.path(app_dir, "cache", "era5_daily_bandung_cilegon.rds")
@@ -172,7 +177,14 @@ fallback_path <- file.path(app_dir, "cache", "era5_daily.rds")
 existing <- read_cache_data(cache_path)
 if (!valid_climate_frame(existing)) existing <- read_cache_data(fallback_path)
 
-end_date <- max(market_dates, na.rm = TRUE)
+era5_lag_days <- suppressWarnings(as.integer(Sys.getenv("ERA5_CDS_LAG_DAYS", "5")))
+if (is.na(era5_lag_days) || era5_lag_days < 0) era5_lag_days <- 5
+available_cap <- Sys.Date() - era5_lag_days
+end_date <- min(max(market_dates, na.rm = TRUE), available_cap)
+if (end_date < min(market_dates, na.rm = TRUE)) {
+  message("Target ERA5 masih terlalu baru untuk CDS. Cap ketersediaan: ", as.character(available_cap), ".")
+  quit(save = "no")
+}
 recent_days <- suppressWarnings(as.integer(Sys.getenv("ERA5_CDS_RECENT_DAYS", "45")))
 if (is.na(recent_days) || recent_days < 7) recent_days <- 45
 recent_start <- max(min(market_dates, na.rm = TRUE), end_date - recent_days + 1)
