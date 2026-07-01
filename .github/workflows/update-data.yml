@@ -57,15 +57,15 @@ jobs:
 
       - name: Write .cdsapirc from GitHub Secrets
         run: |
-          cat > satria_tomat_shiny/.cdsapirc <<EOF
+          cat > cilegon_komoditas_shiny/.cdsapirc <<EOF
           url: ${{ secrets.CDSAPI_URL }}
           key: ${{ secrets.CDSAPI_KEY }}
           EOF
 
       - name: Write .Renviron overrides
         run: |
-          cat > satria_tomat_shiny/.Renviron.github <<EOF
-          CDSAPIRC_PATH=satria_tomat_shiny/.cdsapirc
+          cat > cilegon_komoditas_shiny/.Renviron.github <<EOF
+          CDSAPIRC_PATH=cilegon_komoditas_shiny/.cdsapirc
           PYTHON_EXE=${PYTHON_EXE}
           ERA5_CDS_RECENT_DAYS=45
           ERA5_CDS_LAG_DAYS=5
@@ -76,31 +76,32 @@ jobs:
 
       - name: Merge runtime environment
         run: |
-          cat satria_tomat_shiny/.Renviron.github >> satria_tomat_shiny/.Renviron
+          cat cilegon_komoditas_shiny/.Renviron.github >> cilegon_komoditas_shiny/.Renviron
 
       - name: Update SAGON cache
         run: |
-          Rscript satria_tomat_shiny/update_sagon_daily.R
+          Rscript cilegon_komoditas_shiny/update_sagon_daily.R
 
       - name: Update BMKG cache
         run: |
-          Rscript satria_tomat_shiny/update_bmkg_forecast.R
+          Rscript cilegon_komoditas_shiny/update_bmkg_forecast.R
 
       - name: Update ERA5 cache
         run: |
-          Rscript satria_tomat_shiny/update_era5_daily.R
+          Rscript cilegon_komoditas_shiny/update_era5_daily.R
 
       - name: Commit updated caches
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f satria_tomat_shiny/cache/sagon_daily_long.rds
-          git add -f satria_tomat_shiny/cache/bmkg_forecast_daily.rds
-          git add -f satria_tomat_shiny/cache/era5_daily.rds
-          git add -f satria_tomat_shiny/cache/era5_daily_bandung_cilegon.rds
+          git add -f cilegon_komoditas_shiny/cache/sagon_daily_long.rds
+          git add -f cilegon_komoditas_shiny/cache/bmkg_forecast_daily.rds
+          git add -f cilegon_komoditas_shiny/cache/era5_daily.rds
+          git add -f cilegon_komoditas_shiny/cache/era5_daily_bandung_cilegon.rds
           if git diff --cached --quiet; then
             echo "No cache changes to commit."
             exit 0
           fi
           git commit -m "chore: refresh market and climate caches"
           git push
+

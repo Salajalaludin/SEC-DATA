@@ -3,7 +3,7 @@ suppressPackageStartupMessages({
 })
 
 app_file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
-if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("satria_tomat_shiny/update_bmkg_forecast.R")) "satria_tomat_shiny/update_bmkg_forecast.R" else "update_bmkg_forecast.R"
+if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("cilegon_komoditas_shiny/update_bmkg_forecast.R")) "cilegon_komoditas_shiny/update_bmkg_forecast.R" else "update_bmkg_forecast.R"
 app_dir <- dirname(normalizePath(app_file_arg, winslash = "/", mustWork = FALSE))
 app_renviron <- file.path(app_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)
@@ -71,3 +71,4 @@ saveRDS(
 )
 
 message("BMKG forecast updated: ", as.character(min(daily$tanggal)), " sampai ", as.character(max(daily$tanggal)))
+

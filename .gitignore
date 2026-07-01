@@ -15,7 +15,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-satria_tomat_shiny/cache/
+cilegon_komoditas_shiny/cache/
 data_era5_nc4/
 data_era5_tomat_cilegon_lampung_jabar/
 data_era5_tomat_cilegon_lampung_jabar_nc/
@@ -24,4 +24,5 @@ data_era5_tomat_cilegon_lampung_jabar_nc/
 
 .agents/
 text
-satria_tomat_shiny/rsconnect/
+cilegon_komoditas_shiny/rsconnect/
+

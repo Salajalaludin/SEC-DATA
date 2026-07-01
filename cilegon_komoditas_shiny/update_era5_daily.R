@@ -3,7 +3,7 @@ suppressPackageStartupMessages({
 })
 
 app_file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
-if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("satria_tomat_shiny/update_era5_daily.R")) "satria_tomat_shiny/update_era5_daily.R" else "update_era5_daily.R"
+if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("cilegon_komoditas_shiny/update_era5_daily.R")) "cilegon_komoditas_shiny/update_era5_daily.R" else "update_era5_daily.R"
 app_dir <- dirname(normalizePath(app_file_arg, winslash = "/", mustWork = FALSE))
 app_renviron <- file.path(app_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)
@@ -234,3 +234,4 @@ saveRDS(list(key = paste("scheduled-update", min(merged$tanggal), max(merged$tan
 saveRDS(list(key = paste("scheduled-update", min(merged$tanggal), max(merged$tanggal)), data = merged), fallback_path)
 
 message("ERA5 updated: ", as.character(min(recent$tanggal)), " sampai ", as.character(max(recent$tanggal)))
+

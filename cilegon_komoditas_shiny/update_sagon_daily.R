@@ -4,7 +4,7 @@ suppressPackageStartupMessages({
 })
 
 app_file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
-if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("satria_tomat_shiny/update_sagon_daily.R")) "satria_tomat_shiny/update_sagon_daily.R" else "update_sagon_daily.R"
+if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("cilegon_komoditas_shiny/update_sagon_daily.R")) "cilegon_komoditas_shiny/update_sagon_daily.R" else "update_sagon_daily.R"
 app_dir <- dirname(normalizePath(app_file_arg, winslash = "/", mustWork = FALSE))
 app_renviron <- file.path(app_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)
@@ -147,3 +147,4 @@ saveRDS(
 )
 
 message("SAGON updated: ", as.character(min(latest$tanggal, na.rm = TRUE)), " sampai ", as.character(max(latest$tanggal, na.rm = TRUE)))
+

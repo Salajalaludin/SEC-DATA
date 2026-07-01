@@ -11,7 +11,7 @@ Folder ini berisi prototype R Shiny untuk alur:
 7. Interpretasi SHAP untuk dua model, masing-masing summary dan dependence plot.
 8. Dashboard monitoring, prediksi 3 hari, early warning, dan rekomendasi kebijakan.
 
-App membaca data asli dari file komoditas di folder `satria_tomat_shiny/`, misalnya:
+App membaca data asli dari file komoditas di folder `cilegon_komoditas_shiny/`, misalnya:
 
 - `Data komoditas tomat.xlsx`
 - `Data komoditas bawang merah.xlsx`
@@ -86,7 +86,7 @@ install.packages(c("xml2", "rvest"))
 Jalankan updater manual:
 
 ```powershell
-Rscript "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny\update_sagon_daily.R"
+Rscript "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_sagon_daily.R"
 ```
 
 ## Konfigurasi updater
@@ -111,7 +111,7 @@ pip install cdsapi
 Jalankan updater manual:
 
 ```powershell
-Rscript "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny\update_era5_daily.R"
+Rscript "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_era5_daily.R"
 ```
 
 ## Task Scheduler Windows
@@ -136,13 +136,13 @@ C:\Program Files\R\R-4.5.2\bin\x64\Rscript.exe
 Add arguments:
 
 ```text
-"C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny\update_era5_daily.R"
+"C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_era5_daily.R"
 ```
 
 Start in:
 
 ```text
-C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny
+C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny
 ```
 
 6. Simpan task, lalu tes dengan `Run`
@@ -163,13 +163,13 @@ C:\Program Files\R\R-4.5.2\bin\x64\Rscript.exe
 Add arguments:
 
 ```text
-"C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny\update_sagon_daily.R"
+"C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_sagon_daily.R"
 ```
 
 Start in:
 
 ```text
-C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny
+C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny
 ```
 
 Kalau task SAGON berhasil, cache berikut akan diperbarui:
@@ -208,7 +208,7 @@ install.packages("jsonlite")
 Jalankan updater manual:
 
 ```powershell
-Rscript "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\satria_tomat_shiny\update_bmkg_forecast.R"
+Rscript "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_bmkg_forecast.R"
 ```
 
 ## GitHub Actions
@@ -235,7 +235,7 @@ Secrets yang perlu dibuat di GitHub repository:
 
 Untuk konfigurasi lokal, pakai file contoh:
 
-- `satria_tomat_shiny/.Renviron.example`
+- `cilegon_komoditas_shiny/.Renviron.example`
 
 Lalu isi nilai sebenarnya di `.Renviron` lokal atau di GitHub Secrets. Jangan commit `.cdsapirc` dan `.Renviron` asli ke repo.
 
@@ -281,11 +281,12 @@ tanggal,suhu_puncak,kelembaban,hujan
 ## Cara menjalankan
 
 ```r
-shiny::runApp("satria_tomat_shiny")
+shiny::runApp("cilegon_komoditas_shiny")
 ```
 
 Atau dari terminal:
 
 ```bash
-Rscript -e "shiny::runApp('satria_tomat_shiny', host='127.0.0.1', port=3838)"
+Rscript -e "shiny::runApp('cilegon_komoditas_shiny', host='127.0.0.1', port=3838)"
 ```
+
