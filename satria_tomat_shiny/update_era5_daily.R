@@ -46,6 +46,16 @@ refresh_era5_from_cds <- function(start_date, end_date, app_dir) {
 
   out_dir <- normalizePath(file.path(app_dir, "cache", "era5_cds_nc"), winslash = "/", mustWork = FALSE)
   py <- Sys.getenv("PYTHON_EXE", "python")
+  cdsapi_check <- system2(py, c("-c", shQuote("import cdsapi")), stdout = TRUE, stderr = TRUE)
+  cdsapi_code <- attr(cdsapi_check, "status")
+  if (!is.null(cdsapi_code) && cdsapi_code != 0) {
+    message("Python package cdsapi belum terbaca oleh ", py, ". Mencoba install ulang di interpreter yang sama.")
+    install_out <- system2(py, c("-m", "pip", "install", "cdsapi"), stdout = TRUE, stderr = TRUE)
+    install_code <- attr(install_out, "status")
+    if (!is.null(install_code) && install_code != 0) {
+      stop(paste("Install cdsapi gagal:", paste(install_out, collapse = " ")), call. = FALSE)
+    }
+  }
   force <- identical(Sys.getenv("ERA5_CDS_FORCE", "0"), "1")
   args <- c(
     helper,
