@@ -68,13 +68,38 @@ Data iklim historis diambil dari CDS API Copernicus ERA5 melalui:
 ```text
 cilegon_komoditas_shiny/update_era5_daily.R
 cilegon_komoditas_shiny/fetch_era5_cds.py
+R/data_climate.R          # modul transformasi iklim (Methodology V2)
+scripts/rebuild_era5_cache.R  # rebuild cache dari file NetCDF lokal
 ```
 
-Data ERA5 awalnya berbentuk jam-jaman. Agregasi harian yang dipakai:
+**Spatial scope (Methodology V2): Cilegon Local Climate.** Variabel ERA5
+dirata-ratakan secara spasial pada 2x2 sel grid ERA5 (0.1 derajat) terdekat ke
+Kota Cilegon (±106.01 E, 6.00 S). Extent dikonfigurasi di `era5_config()` pada
+`R/data_climate.R` dan disinkronkan dengan `ERA5_AREA` pada
+`fetch_era5_cds.py`. Interpretasi sebelumnya (koridor luas Bandung–Cilegon)
+tidak lagi dipakai sebagai "cuaca lokal Cilegon".
 
-- `suhu_puncak`: maksimum suhu harian
-- `kelembaban`: rata-rata kelembaban harian
-- `hujan`: total curah hujan harian
+**Timezone (Methodology V2): eksplisit.** `valid_time` ERA5 disimpan sebagai
+POSIXct **UTC** dan dipertahankan sampai semua variabel (t2m, d2m, tp)
+diselaraskan per timestamp yang sama. Tanggal lokal (`tanggal`) diturunkan
+dengan timezone **Asia/Jakarta** setelah alignment.
+
+**Alur pemrosesan (Methodology V2):**
+
+1. `fetch_era5_cds.py` mengunduh `reanalysis-era5-single-levels` jam-jaman
+   (t2m, d2m, tp) untuk area Cilegon lokal.
+2. `R/data_climate.R` membaca tiap file NetCDF, **menjaga `valid_time` eksak**,
+   menggabungkan t2m + d2m + tp berdasarkan `valid_time` (bukan hanya tanggal
+   kalender), menghitung kelembaban relatif dari suhu dan dewpoint pada
+   timestamp yang sama, lalu baru mengagregasi harian.
+3. Definisi harian:
+
+   - `suhu_puncak`: maksimum suhu per jam
+   - `kelembaban`: rata-rata RH per jam
+   - `hujan`: total curah hujan per hari
+
+4. Validasi data-quality dijalankan: duplikat timestamp, jumlah observasi per
+   hari lokal, RH di luar 0-100, presipitasi negatif, hari all-NA.
 
 Cache harian disimpan ke:
 
@@ -83,7 +108,19 @@ cilegon_komoditas_shiny/cache/era5_daily_bandung_cilegon.rds
 cilegon_komoditas_shiny/cache/era5_daily.rds
 ```
 
+> Catatan: nama file cache masih memakai istilah lama `era5_daily_bandung_cilegon.rds`
+> karena sudah direferensikan app/CI; isinya sekarang adalah **Cilegon Local
+> Climate**. Rename file cache dijadwalkan pada refactor Sprint 6.
+
 ERA5 biasanya tertinggal beberapa hari dari tanggal hari ini. Karena itu updater memakai `ERA5_CDS_LAG_DAYS=5` agar tidak memaksa mengambil tanggal yang belum tersedia.
+
+**Temuan data (Sprint 1):** nilai `tp` pada file NetCDF lokal tampak berupa
+variabel **akumulasi** (merambat naik dan me-reset sekitar 01:00 UTC), bukan
+curah hujan per jam. DefinisI `hujan = sum(tp) per hari` saat ini menghasilkan
+rata-rata ~84 mm/hari (2023-01 s.d. 2026-06), lebih tinggi dari klimatologi
+Cilegon. Interpretasi akumulasi ini belum diubah pada Sprint 1 dan perlu
+dikonfirmasi (kemungkinan: total per siklus = nilai akhir akumulasi) sebelum
+fitur `hujan` dianggap valid untuk model.
 
 ### 3. BMKG Forecast
 
@@ -275,6 +312,11 @@ Poin yang biasanya ditanyakan saat presentasi:
 - Suhu puncak memakai maksimum harian.
 - Kelembaban memakai rata-rata harian.
 - Curah hujan memakai total harian.
+- **ERA5 (Methodology V2, Sprint 1):** variabel t2m/d2m/tp diselaraskan per
+  `valid_time` eksak (POSIXct UTC) sebelum agregasi harian; RH dihitung dari
+  suhu dan dewpoint pada timestamp yang sama; tanggal lokal memakai
+  Asia/Jakarta; scope spasial adalah **Cilegon Local Climate** (2x2 sel terdekat
+  Kota Cilegon). Lihat `R/data_climate.R`.
 - Train-test split memakai 80:20 berdasarkan urutan waktu.
 - Tidak ada data validasi terpisah.
 - Rolling forecast pada test dilakukan satu langkah ke depan.

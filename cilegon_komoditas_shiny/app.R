@@ -15,7 +15,20 @@ app_start_dir <- dirname(normalizePath(app_file_arg, winslash = "/", mustWork = 
 app_renviron <- file.path(app_start_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)
 
-bandung_cilegon_extent <- terra::ext(105.85, 107.85, -7.30, -5.80)
+## Load centralised ERA5 transformation module (R/data_climate.R).
+source_climate_module <- function(start_dir) {
+  candidates <- unique(c(
+    file.path(start_dir, "R", "data_climate.R"),
+    file.path(dirname(start_dir), "R", "data_climate.R"),
+    file.path(getwd(), "R", "data_climate.R")
+  ))
+  hit <- candidates[file.exists(candidates)]
+  if (length(hit) == 0) stop("Modul R/data_climate.R tidak ditemukan.", call. = FALSE)
+  source(hit[[1]], local = FALSE)
+}
+source_climate_module(app_start_dir)
+
+era5_extent <- era5_config()$extent
 train_ratio <- 0.80
 forecast_horizon <- 3
 ## Default auto-refresh interval: once per day (24 hours = 86,400,000 ms).
@@ -294,17 +307,6 @@ find_cdsapirc <- function(app_dir) {
   hit[[1]]
 }
 
-parse_valid_time <- function(layer_names) {
-  seconds <- as.numeric(sub(".*valid_time=([0-9]+).*", "\\1", layer_names))
-  as.POSIXct(seconds, origin = "1970-01-01", tz = "UTC")
-}
-
-relative_humidity <- function(temp_c, dewpoint_c) {
-  actual <- exp((17.625 * dewpoint_c) / (243.04 + dewpoint_c))
-  saturation <- exp((17.625 * temp_c) / (243.04 + temp_c))
-  pmin(100, pmax(0, 100 * actual / saturation))
-}
-
 normalize_market_name <- function(sheet) {
   key <- tolower(gsub("\\s+", " ", trimws(sheet)))
   if (grepl("blok", key)) return("Pasar Blok F")
@@ -339,104 +341,25 @@ read_market_data <- function(path, commodity_label = NULL) {
   rbind(market[, c("tanggal", "pasar", "komoditas", "harga")], avg[, c("tanggal", "pasar", "komoditas", "harga")])
 }
 
-read_one_era5_file <- function(path) {
-  subdatasets <- tryCatch(names(terra::sds(path)), error = function(e) character())
-  has_var <- function(var) var %in% subdatasets
-
-  hourly_parts <- list()
-  if (has_var("t2m")) {
-    t2m <- terra::crop(rast(path, subds = "t2m"), bandung_cilegon_extent)
-    hourly_parts$t2m <- data.frame(
-      tanggal = as.Date(parse_valid_time(names(t2m)), tz = "Asia/Bangkok"),
-      suhu = terra::global(t2m, "mean", na.rm = TRUE)[, 1] - 273.15
-    )
-  }
-  if (has_var("d2m")) {
-    d2m <- terra::crop(rast(path, subds = "d2m"), bandung_cilegon_extent)
-    hourly_parts$d2m <- data.frame(
-      tanggal = as.Date(parse_valid_time(names(d2m)), tz = "Asia/Bangkok"),
-      dewpoint = terra::global(d2m, "mean", na.rm = TRUE)[, 1] - 273.15
-    )
-  }
-  if (has_var("tp")) {
-    tp <- terra::crop(rast(path, subds = "tp"), bandung_cilegon_extent)
-    hourly_parts$tp <- data.frame(
-      tanggal = as.Date(parse_valid_time(names(tp)), tz = "Asia/Bangkok"),
-      hujan = pmax(0, terra::global(tp, "mean", na.rm = TRUE)[, 1] * 1000)
-    )
-  }
-  if (length(hourly_parts) == 0) stop("Tidak ada variabel ERA5 yang dikenali di ", path, call. = FALSE)
-
-  hourly <- Reduce(function(x, y) merge(x, y, by = "tanggal", all = TRUE), hourly_parts)
-  daily_parts <- list()
-  if ("suhu" %in% names(hourly)) {
-    temp_daily <- aggregate(suhu ~ tanggal, hourly, max, na.rm = TRUE)
-    names(temp_daily)[2] <- "suhu_puncak"
-    daily_parts$temp <- temp_daily
-  }
-  if (all(c("suhu", "dewpoint") %in% names(hourly))) {
-    hourly$kelembaban <- relative_humidity(hourly$suhu, hourly$dewpoint)
-    daily_parts$hum <- aggregate(kelembaban ~ tanggal, hourly, mean, na.rm = TRUE)
-  }
-  if ("hujan" %in% names(hourly)) {
-    daily_parts$rain <- aggregate(hujan ~ tanggal, hourly, sum, na.rm = TRUE)
-  }
-
-  Reduce(function(x, y) merge(x, y, by = "tanggal", all = TRUE), daily_parts)
-}
-
+## Fallback reading of ERA5 NetCDF, centralised in R/data_climate.R:
+## hourly variables are aligned by exact valid_time, RH is computed from
+## timestamp-matched temperature/dewpoint, and daily aggregation runs only
+## after alignment. The app consumes the pre-built daily cache in normal
+## operation; this path is used only when the cache is missing.
 read_era5_daily <- function(dir_path, start_date, end_date, cache_path) {
-  cache_key <- paste(start_date, end_date, normalizePath(dir_path, winslash = "/", mustWork = FALSE), as.vector(bandung_cilegon_extent))
+  cache_key <- paste(start_date, end_date, normalizePath(dir_path, winslash = "/", mustWork = FALSE), as.vector(era5_extent))
   if (file.exists(cache_path)) {
     cache <- readRDS(cache_path)
     if (identical(cache$key, cache_key) && valid_climate_frame(cache$data)) return(cache$data)
   }
 
-  files <- list.files(dir_path, pattern = "\\.nc$", recursive = TRUE, full.names = TRUE)
-  ym_text <- sub(".*_(20[0-9]{2})_([0-9]{2})(_[0-9]{2})?\\.nc$", "\\1-\\2-01", basename(files))
-  file_month <- as.Date(ym_text)
-  start_month <- as.Date(format(start_date, "%Y-%m-01"))
-  end_month <- as.Date(format(end_date, "%Y-%m-01"))
-  files <- files[!is.na(file_month) & file_month >= start_month & file_month <= end_month]
-  files <- sort(files)
-
-  # Read each file but skip unreadable/corrupt files instead of failing the whole process
-  chunks <- list()
-  for (f in files) {
-    ok <- tryCatch({
-      df <- read_one_era5_file(f)
-      if (is.data.frame(df) && nrow(df) > 0) chunks[[length(chunks) + 1]] <- df
-      TRUE
-    }, error = function(e) {
-      warning("Gagal membaca file ERA5: ", f, " -> ", conditionMessage(e))
-      FALSE
-    })
-    invisible(ok)
-  }
-
-  if (length(chunks) == 0) {
+  hourly <- read_era5_hourly_range(dir_path, start_date, end_date, era5_extent)
+  if (!is.data.frame(hourly) || nrow(hourly) == 0) {
     # Return empty climate frame when no valid files
     climate <- data.frame(tanggal = as.Date(character()), suhu_puncak = numeric(), kelembaban = numeric(), hujan = numeric())
   } else {
-    all_names <- unique(unlist(lapply(chunks, names)))
-    chunks <- lapply(chunks, function(x) {
-      missing <- setdiff(all_names, names(x))
-      for (nm in missing) x[[nm]] <- NA_real_
-      x[, all_names, drop = FALSE]
-    })
-    climate <- do.call(rbind, chunks)
-    for (nm in c("suhu_puncak", "kelembaban", "hujan")) {
-      if (!nm %in% names(climate)) climate[[nm]] <- NA_real_
-    }
-    dates <- sort(unique(climate$tanggal))
-    climate <- data.frame(
-      tanggal = dates,
-      suhu_puncak = as.numeric(tapply(climate$suhu_puncak, climate$tanggal, mean, na.rm = TRUE)[as.character(dates)]),
-      kelembaban = as.numeric(tapply(climate$kelembaban, climate$tanggal, mean, na.rm = TRUE)[as.character(dates)]),
-      hujan = as.numeric(tapply(climate$hujan, climate$tanggal, mean, na.rm = TRUE)[as.character(dates)])
-    )
-    climate[is.nan(as.matrix(climate[, c("suhu_puncak", "kelembaban", "hujan")])), c("suhu_puncak", "kelembaban", "hujan")] <- NA_real_
-    climate <- climate[climate$tanggal >= start_date & climate$tanggal <= end_date, ]
+    climate <- aggregate_era5_daily(hourly)
+    climate <- climate[climate$tanggal >= start_date & climate$tanggal <= end_date, , drop = FALSE]
   }
 
   if (valid_climate_frame(climate)) {
