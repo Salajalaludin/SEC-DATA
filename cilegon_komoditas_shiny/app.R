@@ -15,18 +15,19 @@ app_start_dir <- dirname(normalizePath(app_file_arg, winslash = "/", mustWork = 
 app_renviron <- file.path(app_start_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)
 
-## Load centralised ERA5 transformation module (R/data_climate.R).
-source_climate_module <- function(start_dir) {
+## Load centralised repository modules (R/data_climate.R, R/features.R).
+source_repo_module <- function(start_dir, module) {
   candidates <- unique(c(
-    file.path(start_dir, "R", "data_climate.R"),
-    file.path(dirname(start_dir), "R", "data_climate.R"),
-    file.path(getwd(), "R", "data_climate.R")
+    file.path(start_dir, "R", module),
+    file.path(dirname(start_dir), "R", module),
+    file.path(getwd(), "R", module)
   ))
   hit <- candidates[file.exists(candidates)]
-  if (length(hit) == 0) stop("Modul R/data_climate.R tidak ditemukan.", call. = FALSE)
+  if (length(hit) == 0) stop("Modul R/", module, " tidak ditemukan.", call. = FALSE)
   source(hit[[1]], local = FALSE)
 }
-source_climate_module(app_start_dir)
+source_repo_module(app_start_dir, "data_climate.R")
+source_repo_module(app_start_dir, "features.R")
 
 era5_extent <- era5_config()$extent
 train_ratio <- 0.80
@@ -43,29 +44,6 @@ format_tanggal <- function(x) {
   bulan <- c("Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des")
   x <- as.Date(x, origin = "1970-01-01")
   paste(format(x, "%d"), bulan[as.integer(format(x, "%m"))], format(x, "%Y"))
-}
-
-lag_vec <- function(x, k = 1) {
-  c(rep(NA, k), head(x, -k))
-}
-
-roll_stat <- function(x, k, fun) {
-  stats::filter(x, rep(1 / k, k), sides = 1) |>
-    as.numeric()
-}
-
-roll_sd <- function(x, k) {
-  vapply(seq_along(x), function(i) {
-    if (i < k) return(NA_real_)
-    stats::sd(x[(i - k + 1):i], na.rm = TRUE)
-  }, numeric(1))
-}
-
-roll_apply <- function(x, k, fun) {
-  vapply(seq_along(x), function(i) {
-    if (i < k) return(NA_real_)
-    fun(x[(i - k + 1):i], na.rm = TRUE)
-  }, numeric(1))
 }
 
 model_metrics <- function(actual, predicted) {
@@ -512,21 +490,10 @@ prepare_avg_frame <- function(df) {
   avg <- merge(avg, margin, by = "tanggal", all.x = TRUE)
   avg$margin_hl[is.na(avg$margin_hl)] <- 0
   avg <- avg[order(avg$tanggal), ]
-  avg$harga_kemarin <- lag_vec(avg$harga, 1)
-  avg$lag2 <- lag_vec(avg$harga, 2)
-  avg$lag3 <- lag_vec(avg$harga, 3)
-  avg$lag7 <- lag_vec(avg$harga, 7)
-  avg$ma7 <- roll_stat(avg$harga, 7, mean)
-  avg$ma7[is.na(avg$ma7)] <- avg$harga[is.na(avg$ma7)]
-  avg$vol7 <- roll_sd(avg$harga, 7)
-  avg$min7 <- roll_apply(avg$harga, 7, min)
-  avg$max7 <- roll_apply(avg$harga, 7, max)
-  avg$suhu_puncak_lag1 <- lag_vec(avg$suhu_puncak, 1)
-  avg$delta_suhu <- c(0, diff(avg$suhu_puncak))
-  avg$hei <- pmax(avg$suhu_puncak_lag1 - 32, 0) * pmax(82 - avg$kelembaban, 0)
-  avg$day_of_week <- factor(weekdays(avg$tanggal), levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
-  avg$month <- factor(format(avg$tanggal, "%m"))
-  avg
+  ## All model features are computed by the shared builder in R/features.R.
+  ## margin_hl (same-day) is kept only for the risk proxy label (nowcasting);
+  ## the forecasting predictor is margin_hl_lag1 (prior day).
+  build_training_features(avg)
 }
 
 fit_pipeline_models <- function(train_avg) {
@@ -548,9 +515,9 @@ fit_pipeline_models <- function(train_avg) {
   model_frame <- train_avg
   model_frame$sarima <- sarima_fit
   model_frame$residual <- residual
-  model_frame <- model_frame[complete.cases(model_frame[, c("harga_kemarin", "lag2", "lag3", "lag7", "suhu_puncak_lag1", "ma7", "vol7", "min7", "max7", "hei", "residual")]), ]
+  model_frame <- model_frame[complete.cases(model_frame[, c("harga_kemarin", "lag2", "lag3", "lag7", "suhu_puncak_lag1", "ma7", "vol7", "min7", "max7", "margin_hl_lag1", "hei", "residual")]), ]
 
-  feature_formula <- ~ suhu_puncak + suhu_puncak_lag1 + delta_suhu + hei + hujan + kelembaban + harga_kemarin + lag2 + lag3 + lag7 + ma7 + vol7 + min7 + max7 + margin_hl + day_of_week + month - 1
+  feature_formula <- ~ suhu_puncak + suhu_puncak_lag1 + delta_suhu + hei + hujan + kelembaban + harga_kemarin + lag2 + lag3 + lag7 + ma7 + vol7 + min7 + max7 + margin_hl_lag1 + day_of_week + month - 1
   x_reg <- model.matrix(feature_formula, model_frame)
   reg_matrix <- xgb.DMatrix(data = x_reg, label = model_frame$residual)
   price_matrix <- xgb.DMatrix(data = x_reg, label = model_frame$harga)
@@ -663,45 +630,30 @@ fit_pipeline_models <- function(train_avg) {
   )
 }
 
-align_future_matrix <- function(mat, feature_cols) {
-  missing <- setdiff(feature_cols, colnames(mat))
-  if (length(missing) > 0) {
-    filler <- matrix(0, nrow = nrow(mat), ncol = length(missing))
-    colnames(filler) <- missing
-    mat <- cbind(mat, filler)
-  }
-  mat[, feature_cols, drop = FALSE]
-}
-
 predict_future_path <- function(fit_obj, history_avg, future_climate) {
   future_features <- future_climate[order(future_climate$tanggal), c("tanggal", "suhu_puncak", "kelembaban", "hujan"), drop = FALSE]
   h <- nrow(future_features)
   if (h == 0) return(data.frame())
   sarima_forecast <- as.numeric(forecast::forecast(fit_obj$models$sarima, h = h)$mean)
-  previous_suhu <- c(tail(history_avg$suhu_puncak, 1), head(future_features$suhu_puncak, -1))
-  future_features$suhu_puncak_lag1 <- previous_suhu
-  future_features$delta_suhu <- c(future_features$suhu_puncak[1] - tail(history_avg$suhu_puncak, 1), diff(future_features$suhu_puncak))
-  future_features$hei <- pmax(future_features$suhu_puncak_lag1 - 32, 0) * pmax(82 - future_features$kelembaban, 0)
-  future_features$margin_hl <- tail(history_avg$margin_hl, 1)
+  last_margin <- tail(history_avg$margin_hl, 1)
+  prev_suhu <- tail(history_avg$suhu_puncak, 1)
   future_residual <- numeric(h)
   future_price <- numeric(h)
   future_hybrid <- numeric(h)
   future_risk <- numeric(h)
   proxy_prices <- as.numeric(history_avg$harga)
   for (i in seq_len(h)) {
-    hist <- proxy_prices
-    row <- future_features[i, , drop = FALSE]
-    row$harga_kemarin <- tail(hist, 1)
-    row$lag2 <- if (length(hist) >= 2) hist[length(hist) - 1] else tail(hist, 1)
-    row$lag3 <- if (length(hist) >= 3) hist[length(hist) - 2] else tail(hist, 1)
-    row$lag7 <- if (length(hist) >= 7) hist[length(hist) - 6] else tail(hist, 1)
-    row$ma7 <- mean(tail(hist, 7), na.rm = TRUE)
-    row$vol7 <- stats::sd(tail(hist, 7), na.rm = TRUE)
-    if (is.na(row$vol7)) row$vol7 <- 0
-    row$min7 <- min(tail(hist, 7), na.rm = TRUE)
-    row$max7 <- max(tail(hist, 7), na.rm = TRUE)
-    row$day_of_week <- factor(weekdays(row$tanggal), levels = levels(fit_obj$model_frame$day_of_week))
-    row$month <- factor(format(row$tanggal, "%m"), levels = levels(fit_obj$model_frame$month))
+    ## Feature row built by the shared builder (R/features.R); identical
+    ## definitions to training. proxy_prices holds prices up to day t-1 and
+    ## grows with predicted hybrid values for multi-step forecasts.
+    row <- build_future_feature_row(
+      prices = proxy_prices,
+      last_margin = last_margin,
+      target_climate_row = future_features[i, , drop = FALSE],
+      prev_suhu = prev_suhu,
+      day_levels = levels(fit_obj$model_frame$day_of_week),
+      month_levels = levels(fit_obj$model_frame$month)
+    )
     x_row <- model.matrix(fit_obj$feature_formula, row)
     x_row <- align_future_matrix(x_row, fit_obj$feature_cols)
     future_residual[i] <- as.numeric(predict(fit_obj$models$xgb_reg, x_row))
@@ -710,6 +662,7 @@ predict_future_path <- function(fit_obj, history_avg, future_climate) {
     future_hybrid[i] <- max(0, 0.001 * residual_hybrid + 0.999 * future_price[i] + fit_obj$hybrid_bias)
     future_risk[i] <- as.numeric(predict(fit_obj$models$xgb_cls, x_row))
     proxy_prices <- c(proxy_prices, future_hybrid[i])
+    prev_suhu <- as.numeric(future_features$suhu_puncak[i])
   }
   data.frame(
     tanggal = as.Date(future_features$tanggal),
@@ -861,6 +814,7 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
       min7 = as.numeric(live_fit$model_frame$min7),
       max7 = as.numeric(live_fit$model_frame$max7),
       margin_hl = as.numeric(live_fit$model_frame$margin_hl),
+      margin_hl_lag1 = as.numeric(live_fit$model_frame$margin_hl_lag1),
       suhu_puncak_lag1 = as.numeric(live_fit$model_frame$suhu_puncak_lag1),
       delta_suhu = as.numeric(live_fit$model_frame$delta_suhu),
       hei = as.numeric(live_fit$model_frame$hei),
@@ -1176,7 +1130,7 @@ ui <- fluidPage(
           div(class = "note-item", HTML("<b>HEI</b><br>Heat Exposure Index, indeks paparan panas. Di app ini dihitung dari kelebihan suhu di atas 32 derajat C dikalikan kondisi kelembaban yang mendukung stres panas.")),
           div(class = "note-item", HTML("<b>delta_suhu</b><br>Perubahan suhu puncak dibanding hari sebelumnya. Nilai besar berarti terjadi lonjakan atau penurunan suhu mendadak.")),
           div(class = "note-item", HTML("<b>ma7</b><br>Rata-rata bergerak harga tomat 7 hari. Fitur ini mewakili level harga jangka pendek sebelum prediksi dibuat.")),
-          div(class = "note-item", HTML("<b>margin_hl</b><br>Selisih harga tertinggi dan terendah dari tiga pasar pada tanggal yang sama. Makin besar berarti disparitas antar pasar makin kuat.")),
+          div(class = "note-item", HTML("<b>margin_hl_lag1</b><br>Selisih harga tertinggi dan terendah dari tiga pasar pada HARI SEBELUMNYA (margin_hl di-lag 1 hari). Karena margin hari yang sama baru diketahui setelah pasar tutup, fitur forecasting memakai margin kemarin agar tidak bocor. margin_hl hari yang sama hanya dipakai untuk label proxy risiko, bukan sebagai prediktor.")),
           div(class = "note-item", HTML("<b>hujan</b><br>Total curah hujan harian dari ERA5. Dipakai karena hujan dapat memengaruhi distribusi, pasokan, dan kualitas komoditas.")),
           div(class = "note-item", HTML("<b>day_of_week</b><br>Hari dalam minggu. Fitur kalender untuk menangkap pola pasar mingguan.")),
           div(class = "note-item", HTML("<b>month</b><br>Bulan kalender. Fitur ini membantu membaca pola musiman pasokan dan cuaca.")),

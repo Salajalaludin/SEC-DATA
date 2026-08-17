@@ -157,6 +157,31 @@ BMKG dipakai untuk mengisi kebutuhan prediksi 3 hari ke depan ketika ERA5 histor
 9. XGBoost klasifikasi dipakai untuk status risiko.
 10. SHAP dipakai untuk interpretasi model regresi dan klasifikasi.
 
+## Fitur dan Aturan Timestamp (Methodology V2, Sprint 2)
+
+**Aturan inti:** untuk target prediksi `Y[t]`, fitur turunan dari harga pasar hanya
+memakai informasi yang tersedia paling lambat `t-1`.
+
+- Fitur lag: `harga_kemarin = harga[t-1]`, `lag2 = harga[t-2]`,
+  `lag3 = harga[t-3]`, `lag7 = harga[t-7]`.
+- Fitur rolling: `ma7`, `vol7`, `min7`, `max7` dihitung dari
+  `harga[t-7 .. t-1]` — **tidak** menyertakan `harga[t]`. Baris dengan riwayat
+  kurang dari 7 hari di-buang (drop insufficient-history).
+- Margin pasar: fitur forecasting memakai `margin_hl_lag1[t] = margin_hl[t-1]`
+  (margin hari yang sama = `margin_hl` hanya dipakai untuk label proxy risiko /
+  nowcasting, bukan sebagai prediktor forecasting).
+- Fitur iklim hari `t` (`suhu_puncak`, `kelembaban`, `hujan`, `delta_suhu`, `hei`)
+  pada inference memakai **prakiraan BMKG**; pada training memakai ERA5 observasi
+  sebagai *historical pseudo-forecast* (karena prakiraan BMKG historis tidak
+  disimpan). Ini adalah limitasi yang didokumentasikan, bukan leakage tersembunyi.
+- `suhu_puncak_lag1` memakai iklim `t-1`.
+
+**Satu feature builder** di `R/features.R` dipakai untuk training, test, dan live
+inference (`build_training_features()` dan `build_future_feature_row()`),
+sehingga definisi fitur training = inference. Test otomatis untuk memastikan
+tidak ada target leakage berada di `tests/testthat/test-lag-features.R` dan
+`tests/testthat/test-no-target-leakage.R`.
+
 ## Model
 
 ### SARIMA
@@ -317,6 +342,10 @@ Poin yang biasanya ditanyakan saat presentasi:
   suhu dan dewpoint pada timestamp yang sama; tanggal lokal memakai
   Asia/Jakarta; scope spasial adalah **Cilegon Local Climate** (2x2 sel terdekat
   Kota Cilegon). Lihat `R/data_climate.R`.
+- **Fitur (Methodology V2, Sprint 2):** tidak ada fitur harga untuk target `t`
+  yang membaca `harga[t]`; `ma7/vol7/min7/max7` memakai `harga[t-7..t-1]`;
+  fitur margin forecasting memakai `margin_hl_lag1`; definisi fitur training =
+  inference lewat `R/features.R`. Lihat bagian "Fitur dan Aturan Timestamp".
 - Train-test split memakai 80:20 berdasarkan urutan waktu.
 - Tidak ada data validasi terpisah.
 - Rolling forecast pada test dilakukan satu langkah ke depan.
