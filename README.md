@@ -2,6 +2,16 @@
 
 Repositori ini berisi dashboard R Shiny untuk monitoring harga komoditas pangan Kota Cilegon, prediksi harga 3 hari ke depan, dan early warning risiko distribusi berbasis suhu. Sistem menggabungkan harga pasar SAGON, data iklim historis ERA5, prakiraan cuaca BMKG, model Hybrid SARIMA-XGBoost, dan interpretasi SHAP.
 
+## Status Metodologi
+
+Repositori sedang menjalani validasi **Methodology V2** (pipeline terkoreksi). Seluruh angka performa model warisan (MAE, RMSE, MAPE, SHAP, risk score) hanya berlaku sebagai **baseline** dari Methodology V1 sampai refactor metodologi selesai. Rekaman baseline saat ini tersedia di:
+
+```text
+docs/METHODOLOGY_V1_BASELINE.md
+```
+
+Metodologi V1 = baseline warisan; Metodologi V2 = pipeline terkoreksi yang sedang dikembangkan.
+
 Folder utama aplikasi:
 
 ```text
@@ -275,3 +285,5 @@ Poin yang biasanya ditanyakan saat presentasi:
 ## Status
 
 Repositori ini dirancang sebagai prototype penelitian dan dashboard operasional awal untuk sistem peringatan dini harga komoditas pangan Kota Cilegon.
+
+Saat ini repo sedang dalam proses validasi **Methodology V2**. Metrik model pada implementasi sekarang adalah baseline **Methodology V1** dan tidak boleh dianggap final sampai refactor metodologi selesai. Lihat `docs/METHODOLOGY_V1_BASELINE.md` untuk rekaman baseline.
