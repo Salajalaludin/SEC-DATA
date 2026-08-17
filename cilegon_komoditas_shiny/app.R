@@ -28,9 +28,9 @@ source_repo_module <- function(start_dir, module) {
 }
 source_repo_module(app_start_dir, "data_climate.R")
 source_repo_module(app_start_dir, "features.R")
+source_repo_module(app_start_dir, "evaluation.R")
 
 era5_extent <- era5_config()$extent
-train_ratio <- 0.80
 forecast_horizon <- 3
 ## Default auto-refresh interval: once per day (24 hours = 86,400,000 ms).
 ## Can be overridden via environment var `REFRESH_INTERVAL_MS` (milliseconds).
@@ -44,16 +44,6 @@ format_tanggal <- function(x) {
   bulan <- c("Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des")
   x <- as.Date(x, origin = "1970-01-01")
   paste(format(x, "%d"), bulan[as.integer(format(x, "%m"))], format(x, "%Y"))
-}
-
-model_metrics <- function(actual, predicted) {
-  error <- actual - predicted
-  data.frame(
-    MAE = mean(abs(error), na.rm = TRUE),
-    RMSE = sqrt(mean(error^2, na.rm = TRUE)),
-    MAPE = mean(abs(error) / pmax(abs(actual), 1), na.rm = TRUE),
-    stringsAsFactors = FALSE
-  )
 }
 
 theme_dark_cilegon <- function(base_size = 12) {
@@ -497,53 +487,12 @@ prepare_avg_frame <- function(df) {
 }
 
 fit_pipeline_models <- function(train_avg) {
-  price_ts <- ts(train_avg$harga, frequency = 7)
-  d_adf <- tryCatch(forecast::ndiffs(price_ts, test = "adf"), error = function(e) NA_integer_)
-  d_kpss <- tryCatch(forecast::ndiffs(price_ts, test = "kpss"), error = function(e) NA_integer_)
-  d_seasonal <- tryCatch(forecast::nsdiffs(price_ts), error = function(e) NA_integer_)
-  sarima_model <- forecast::auto.arima(
-    price_ts,
-    seasonal = TRUE,
-    stepwise = TRUE,
-    approximation = FALSE,
-    allowdrift = TRUE,
-    allowmean = TRUE
-  )
-  sarima_fit <- as.numeric(stats::fitted(sarima_model))
-  residual <- as.numeric(stats::residuals(sarima_model))
-
-  model_frame <- train_avg
-  model_frame$sarima <- sarima_fit
-  model_frame$residual <- residual
-  model_frame <- model_frame[complete.cases(model_frame[, c("harga_kemarin", "lag2", "lag3", "lag7", "suhu_puncak_lag1", "ma7", "vol7", "min7", "max7", "margin_hl_lag1", "hei", "residual")]), ]
-
-  feature_formula <- ~ suhu_puncak + suhu_puncak_lag1 + delta_suhu + hei + hujan + kelembaban + harga_kemarin + lag2 + lag3 + lag7 + ma7 + vol7 + min7 + max7 + margin_hl_lag1 + day_of_week + month - 1
-  x_reg <- model.matrix(feature_formula, model_frame)
-  reg_matrix <- xgb.DMatrix(data = x_reg, label = model_frame$residual)
-  price_matrix <- xgb.DMatrix(data = x_reg, label = model_frame$harga)
-
-  best_tune <- data.frame(max_depth = 3, eta = 0.05, nrounds = 120)
-  xgb_reg_model <- xgb.train(
-    params = list(objective = "reg:squarederror", max_depth = best_tune$max_depth, eta = best_tune$eta, subsample = 0.9, colsample_bytree = 0.9, nthread = 1),
-    data = reg_matrix,
-    nrounds = best_tune$nrounds,
-    verbose = 0
-  )
-  xgb_price_model <- xgb.train(
-    params = list(objective = "reg:squarederror", max_depth = best_tune$max_depth, eta = best_tune$eta, subsample = 0.9, colsample_bytree = 0.9, nthread = 1),
-    data = price_matrix,
-    nrounds = best_tune$nrounds,
-    verbose = 0
-  )
-  xgb_residual_fit <- as.numeric(predict(xgb_reg_model, x_reg))
-  xgb_price_fit <- as.numeric(predict(xgb_price_model, x_reg))
-  model_frame$xgb_residual <- xgb_residual_fit
-  model_frame$xgb_price <- xgb_price_fit
-  residual_hybrid_fit <- model_frame$sarima + model_frame$xgb_residual
-  hybrid_raw <- 0.001 * residual_hybrid_fit + 0.999 * model_frame$xgb_price
-  recent_bias <- tail(model_frame$harga - hybrid_raw, min(14, nrow(model_frame)))
-  hybrid_bias <- if (all(is.na(recent_bias))) 30 else stats::median(recent_bias, na.rm = TRUE) + 30
-  model_frame$hybrid <- pmax(0, hybrid_raw + hybrid_bias)
+  ## Shared fitting core (SARIMA + XGBoost regression + hybrid), identical to
+  ## the evaluation refits in R/evaluation.R. This wrapper adds the risk
+  ## classifier, proxy label, status, and SHAP for the dashboard.
+  core <- fit_forecast_models(train_avg)
+  model_frame <- core$model_frame
+  x_reg <- core$x_reg
 
   future_jump <- ave(model_frame$harga, rep(1, nrow(model_frame)), FUN = function(x) {
     sapply(seq_along(x), function(i) {
@@ -576,7 +525,7 @@ fit_pipeline_models <- function(train_avg) {
     labels = c("Aman", "Waspada", "Darurat")
   )
 
-  reg_contrib <- as.data.frame(predict(xgb_reg_model, x_reg, predcontrib = TRUE))
+  reg_contrib <- as.data.frame(predict(core$models$xgb_reg, x_reg, predcontrib = TRUE))
   cls_contrib <- as.data.frame(predict(xgb_cls_model, x_reg, predcontrib = TRUE))
   reg_contrib <- reg_contrib[, !names(reg_contrib) %in% c("BIAS", "(Intercept)"), drop = FALSE]
   cls_contrib <- cls_contrib[, !names(cls_contrib) %in% c("BIAS", "(Intercept)"), drop = FALSE]
@@ -606,27 +555,19 @@ fit_pipeline_models <- function(train_avg) {
     risiko = model_frame$risk_prob
   )
 
-  ord <- forecast::arimaorder(sarima_model)
-  sarima_label <- if (all(c("P", "D", "Q", "Frequency") %in% names(ord))) {
-    paste0("SARIMA (", paste(ord[c("p", "d", "q")], collapse = ","), ")(",
-           paste(ord[c("P", "D", "Q")], collapse = ","), ")[", ord[["Frequency"]], "]")
-  } else {
-    paste0("SARIMA (", paste(ord[c("p", "d", "q")], collapse = ","), ")(0,0,0)[7]")
-  }
-
   list(
     model_frame = model_frame,
-    feature_formula = feature_formula,
-    feature_cols = colnames(x_reg),
-    best_tune = best_tune,
+    feature_formula = core$feature_formula,
+    feature_cols = core$feature_cols,
+    best_tune = data.frame(max_depth = 3, eta = 0.05, nrounds = 120),
     shap_reg_summary = shap_reg_summary,
     shap_cls_summary = shap_cls_summary,
     dep_reg = dep_reg,
     dep_cls = dep_cls,
-    stationarity_label = paste0("ADF d=", d_adf, ", KPSS d=", d_kpss, ", seasonal D=", d_seasonal),
-    sarima_label = sarima_label,
-    hybrid_bias = hybrid_bias,
-    models = list(sarima = sarima_model, xgb_reg = xgb_reg_model, xgb_price = xgb_price_model, xgb_cls = xgb_cls_model)
+    stationarity_label = core$stationarity_label,
+    sarima_label = core$sarima_label,
+    hybrid_bias = core$hybrid_bias,
+    models = list(sarima = core$models$sarima, xgb_reg = core$models$xgb_reg, xgb_price = core$models$xgb_price, xgb_cls = xgb_cls_model)
   )
 }
 
@@ -702,83 +643,46 @@ build_live_future_climate <- function(avg, bmkg_forecast, horizon = forecast_hor
   )
 }
 
-predict_test_rolling <- function(fit_obj, train_avg, test_frame) {
-  history <- train_avg
-  chunks <- vector("list", nrow(test_frame))
-  for (i in seq_len(nrow(test_frame))) {
-    one_day <- test_frame[i, c("tanggal", "suhu_puncak", "kelembaban", "hujan"), drop = FALSE]
-    chunks[[i]] <- predict_future_path(fit_obj, history, one_day)
-    history <- rbind(history, test_frame[i, names(history), drop = FALSE])
-  }
-  do.call(rbind, chunks)
-}
-
 build_pipeline <- function(df, bmkg_forecast = NULL) {
   avg <- prepare_avg_frame(df)
   if (nrow(avg) < 14) stop("Data hasil merge terlalu sedikit untuk dashboard.", call. = FALSE)
 
   avg <- avg[order(avg$tanggal), ]
-  train_n <- floor(nrow(avg) * train_ratio)
-  train_n <- max(10, min(train_n, nrow(avg) - 1))
-  train_avg <- avg[seq_len(train_n), ]
-  test_frame <- avg[(train_n + 1):nrow(avg), ]
-  if (nrow(test_frame) < 1) stop("Data test 20 persen tidak lengkap.", call. = FALSE)
 
-  eval_fit <- fit_pipeline_models(train_avg)
-  test_core <- predict_test_rolling(eval_fit, train_avg, test_frame)
+  ## ---- Evaluation (Methodology V2, Sprint 3) ----
+  ## Time-ordered rolling-origin validation + untouched final test with explicit
+  ## refit at every forecast origin, fair rolling baselines, and NO final-test
+  ## bias tuning. See R/evaluation.R and docs/EVALUATION_PROTOCOL.md.
+  eval_result <- evaluate_pipeline(avg, eval_config())
+  test_metrics <- eval_result$final_test_metrics
+  rolling_test_metrics <- eval_result$validation_metrics
+  selected_model <- "Hybrid"
+
+  final_long <- eval_result$final_test_long
   test_result <- data.frame(
-    tanggal = as.Date(test_core$tanggal),
-    sumber_iklim = as.character(test_frame$sumber_iklim),
-    harga_aktual = as.numeric(test_frame$harga),
-    sarima = test_core$sarima,
-    xgb_residual = test_core$xgb_residual,
-    xgb_price = test_core$xgb_price,
-    prediksi_hybrid = test_core$prediksi_hybrid,
-    risk_prob = test_core$risk_prob,
-    status = test_core$status,
+    tanggal = as.Date(final_long$tanggal),
+    sumber_iklim = as.character(final_long$sumber_iklim),
+    harga_aktual = as.numeric(final_long$actual),
+    sarima = final_long$sarima,
+    xgb_residual = final_long$xgb_residual,
+    xgb_price = final_long$xgb_price,
+    prediksi_hybrid = final_long$hybrid,
+    prediksi_final = final_long$hybrid,
+    error = final_long$actual - final_long$hybrid,
     stringsAsFactors = FALSE
   )
-  test_n <- nrow(test_frame)
-  baseline_forecasts <- list(
-    Naive = rep(tail(eval_fit$model_frame$harga, 1), test_n),
-    MA7 = rep(mean(tail(eval_fit$model_frame$harga, 7), na.rm = TRUE), test_n),
-    `SARIMA-only` = test_core$sarima,
-    `XGBoost harga` = test_core$xgb_price,
-    Hybrid = test_core$prediksi_hybrid
-  )
-  test_metrics <- do.call(rbind, lapply(names(baseline_forecasts), function(name) {
-    out <- model_metrics(test_result$harga_aktual, baseline_forecasts[[name]])
-    out$model <- name
-    out
-  }))
-  test_metrics <- test_metrics[, c("model", "MAE", "RMSE", "MAPE")]
-  selected_model <- "Hybrid"
-  hybrid_bias_grid <- seq(-500, 500, by = 1)
-  hybrid_bias_mape <- vapply(hybrid_bias_grid, function(bias) {
-    mean(abs(test_result$harga_aktual - (test_result$prediksi_hybrid + bias)) / pmax(abs(test_result$harga_aktual), 1), na.rm = TRUE)
-  }, numeric(1))
-  hybrid_test_bias <- hybrid_bias_grid[which.min(hybrid_bias_mape)]
-  baseline_forecasts$Hybrid <- pmax(0, baseline_forecasts$Hybrid + hybrid_test_bias)
-  test_metrics[test_metrics$model == "Hybrid", c("MAE", "RMSE", "MAPE")] <- model_metrics(test_result$harga_aktual, baseline_forecasts$Hybrid)
-  test_result$prediksi_final <- as.numeric(baseline_forecasts[[selected_model]])
-  test_result$error <- as.numeric(test_result$harga_aktual - test_result$prediksi_final)
   test_result$ape <- abs(test_result$error) / pmax(abs(test_result$harga_aktual), 1)
 
-  rolling_frame <- tail(eval_fit$model_frame, min(60, nrow(eval_fit$model_frame)))
   rolling_test_long <- rbind(
-    data.frame(tanggal = rolling_frame$tanggal, model = "Naive", actual = rolling_frame$harga, predicted = rolling_frame$harga_kemarin),
-    data.frame(tanggal = rolling_frame$tanggal, model = "MA7", actual = rolling_frame$harga, predicted = rolling_frame$ma7),
-    data.frame(tanggal = rolling_frame$tanggal, model = "SARIMA-only", actual = rolling_frame$harga, predicted = rolling_frame$sarima),
-    data.frame(tanggal = rolling_frame$tanggal, model = "Hybrid", actual = rolling_frame$harga, predicted = rolling_frame$hybrid)
+    data.frame(tanggal = final_long$tanggal, model = "Naive", actual = final_long$actual, predicted = final_long$naive),
+    data.frame(tanggal = final_long$tanggal, model = "Seasonal Naive 7", actual = final_long$actual, predicted = final_long$sNaive7),
+    data.frame(tanggal = final_long$tanggal, model = "MA7", actual = final_long$actual, predicted = final_long$ma7),
+    data.frame(tanggal = final_long$tanggal, model = "SARIMA-only", actual = final_long$actual, predicted = final_long$sarima),
+    data.frame(tanggal = final_long$tanggal, model = "XGBoost Direct", actual = final_long$actual, predicted = final_long$xgb_price),
+    data.frame(tanggal = final_long$tanggal, model = "Hybrid", actual = final_long$actual, predicted = final_long$hybrid)
   )
   rolling_test_long$error <- rolling_test_long$actual - rolling_test_long$predicted
   rolling_test_long$ape <- abs(rolling_test_long$error) / pmax(abs(rolling_test_long$actual), 1)
-  rolling_test_metrics <- do.call(rbind, lapply(split(rolling_test_long, rolling_test_long$model), function(dat) {
-    out <- model_metrics(dat$actual, dat$predicted)
-    out$model <- unique(dat$model)
-    out
-  }))
-  rolling_test_metrics <- rolling_test_metrics[, c("model", "MAE", "RMSE", "MAPE")]
 
   live_fit <- fit_pipeline_models(avg)
   live_input <- build_live_future_climate(avg, bmkg_forecast, forecast_horizon)
@@ -832,6 +736,12 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
     live_forecast = live_forecast,
     test = test_result,
     test_metrics = test_metrics,
+    validation_metrics = eval_result$validation_metrics,
+    final_test_metrics = eval_result$final_test_metrics,
+    eval_cfg = eval_result$config,
+    eval_n_folds = eval_result$n_folds,
+    eval_development_range = eval_result$split$development_range,
+    eval_final_test_range = eval_result$split$final_test_range,
     selected_model = selected_model,
     rolling_test_metrics = rolling_test_metrics,
     rolling_test_long = rolling_test_long,
@@ -861,6 +771,12 @@ build_dashboard_state <- function(commodity = NULL) {
     selected_model = pipeline$selected_model,
     rolling_test_metrics = pipeline$rolling_test_metrics,
     rolling_test_long = pipeline$rolling_test_long,
+    validation_metrics = pipeline$validation_metrics,
+    final_test_metrics = pipeline$final_test_metrics,
+    eval_cfg = pipeline$eval_cfg,
+    eval_n_folds = pipeline$eval_n_folds,
+    eval_development_range = pipeline$eval_development_range,
+    eval_final_test_range = pipeline$eval_final_test_range,
     best_tune = pipeline$best_tune,
     shap_reg_summary = pipeline$shap_reg_summary,
     shap_cls_summary = pipeline$shap_cls_summary,
@@ -1041,19 +957,19 @@ ui <- fluidPage(
       "Evaluasi Model",
       fluidRow(
         column(6, div(class = "card",
-          div("Test 20 persen terbaru", class = "section-title"),
-          div("Data diurutkan tanggal: 80 persen awal untuk training, 20 persen akhir untuk test", class = "section-subtitle"),
+          div("Final test (untouched)", class = "section-title"),
+          div("Blok waktu terbaru yang tidak dipakai untuk tuning/kalibrasi/pemilihan; dievaluasi satu kali dengan refit model di tiap origin", class = "section-subtitle"),
           tableOutput("testMetrics")
         )),
         column(6, div(class = "card",
-          div("Training terakhir", class = "section-title"),
-          div("Ringkasan 60 titik training terakhir untuk melihat stabilitas error model", class = "section-subtitle"),
+          div("Rolling-origin validation", class = "section-title"),
+          div("Fold validasi expanding-window; model di-refit ulang di setiap origin memakai histori sampai t-1 (bukan fit sekali di blok awal)", class = "section-subtitle"),
           tableOutput("rollingTestMetrics")
         ))
       ),
       div(class = "card",
-        div("Error training terakhir", class = "section-title"),
-        div("Absolute percentage error per tanggal untuk baseline dan model hybrid", class = "section-subtitle"),
+        div("Error final test per model", class = "section-title"),
+        div("Absolute percentage error per tanggal pada final test untuk baseline dan model hybrid (baseline juga memakai informasi yang sama per origin)", class = "section-subtitle"),
         plotOutput("rollingTestPlot", height = 300)
       ),
       div(class = "card",
@@ -1067,8 +983,8 @@ ui <- fluidPage(
         div(class = "note-grid",
           div(class = "note-item", HTML("<b>Data SAGON</b><br>Harga diperoleh dengan scraping halaman publik SAGON Cilegon memakai script <code>update_sagon_daily.R</code>. Hasil scraping disimpan sebagai cache <code>sagon_daily_long.rds</code>, lalu app membaca cache tersebut.")),
           div(class = "note-item", HTML("<b>Data iklim</b><br>ERA5 diambil via CDS API sebagai data jam-jaman, lalu diagregasi harian: suhu puncak = maksimum harian, kelembaban = rata-rata harian, dan hujan = total harian. BMKG dipakai untuk prakiraan H+1 sampai H+3.")),
-          div(class = "note-item", HTML("<b>Train-test split</b><br>Data diurutkan berdasarkan tanggal. Sebanyak 80 persen awal dipakai untuk training dan 20 persen akhir untuk test. Tidak ada data validasi terpisah.")),
-          div(class = "note-item", HTML("<b>Rolling forecast</b><br>Pada test 20 persen, prediksi dilakukan satu hari ke depan secara berurutan. Setelah aktual hari test tersedia, nilai aktual itu masuk ke histori untuk membentuk lag prediksi hari berikutnya.")),
+          div(class = "note-item", HTML("<b>Evaluasi</b><br>Data diurutkan kronologis lalu dibagi: periode development -> rolling-origin validation -> final test (blok terbaru) yang tidak disentuh. Konfigurasi ada di <code>eval_config()</code> di <code>R/evaluation.R</code>.")),
+          div(class = "note-item", HTML("<b>Rolling one-step (refit)</b><br>Untuk tiap hari: model di-fit ulang pada histori yang tersedia sampai t-1, prediksi satu langkah, aktual diungkap, lalu ditambahkan ke histori. SARIMA benar-benar memakai histori terbaru. Baseline (Naive, Seasonal Naive 7, MA7) memakai informasi yang sama per origin.")),
           div(class = "note-item", HTML("<b>Preprocessing</b><br>Handling dilakukan melalui merge tanggal, penghapusan baris iklim/harga yang tidak lengkap, deduplikasi tanggal-pasar-komoditas, serta fitur lag, moving average 7 hari, volatilitas 7 hari, margin pasar, hari, dan bulan.")),
           div(class = "note-item", HTML("<b>Model utama</b><br>Model utama tetap Hybrid SARIMA-XGBoost. Naive, MA7, SARIMA-only, dan XGBoost harga langsung hanya menjadi pembanding untuk membaca kekuatan model.")),
           div(class = "note-item", HTML("<b>SARIMA</b><br>Orde dipilih otomatis oleh <code>forecast::auto.arima()</code> setelah pembacaan kebutuhan differencing ADF/KPSS dan seasonal differencing. Label orde SARIMA ditampilkan di alur model.")),
@@ -1316,6 +1232,7 @@ server <- function(input, output, session) {
     shown$peran <- ifelse(shown$model == "Hybrid", "utama", "pembanding")
     shown$MAE <- rupiah(shown$MAE)
     shown$RMSE <- rupiah(shown$RMSE)
+    shown$WAPE <- sprintf("%.2f%%", 100 * shown$WAPE)
     shown$MAPE <- sprintf("%.2f%%", 100 * shown$MAPE)
     shown
   }, striped = FALSE, bordered = FALSE, spacing = "s")
@@ -1325,6 +1242,7 @@ server <- function(input, output, session) {
     shown <- rolling_test_metrics
     shown$MAE <- rupiah(shown$MAE)
     shown$RMSE <- rupiah(shown$RMSE)
+    shown$WAPE <- sprintf("%.2f%%", 100 * shown$WAPE)
     shown$MAPE <- sprintf("%.2f%%", 100 * shown$MAPE)
     shown
   }, striped = FALSE, bordered = FALSE, spacing = "s")
@@ -1334,7 +1252,7 @@ server <- function(input, output, session) {
     ggplot(rolling_test_long, aes(tanggal, 100 * ape, color = model)) +
       geom_line(linewidth = 0.8, alpha = 0.85) +
       geom_point(size = 1.2, alpha = 0.7) +
-      scale_color_manual(values = c("Naive" = "#8a8c84", "MA7" = "#61c9a8", "SARIMA-only" = "#b2a7ff", "Hybrid" = "#f5a623")) +
+      scale_color_manual(values = c("Naive" = "#8a8c84", "Seasonal Naive 7" = "#c9b8ff", "MA7" = "#61c9a8", "SARIMA-only" = "#b2a7ff", "XGBoost Direct" = "#ffd0a0", "Hybrid" = "#f5a623")) +
       labs(x = NULL, y = "APE (%)") +
       theme_dark_cilegon()
   })
@@ -1413,10 +1331,10 @@ server <- function(input, output, session) {
       xgb_residual = rupiah(test_data$xgb_residual),
       prediksi_final = rupiah(test_data$prediksi_final),
       error = rupiah(test_data$error),
-      risiko = sprintf("%.0f%%", 100 * test_data$risk_prob),
-      status = test_data$status,
+      ape = sprintf("%.2f%%", 100 * test_data$ape),
       stringsAsFactors = FALSE
     )
+    names(test_table)[names(test_table) == "ape"] <- "APE"
     rbind(train_table, test_table)
   }, striped = FALSE, bordered = FALSE, spacing = "s")
 }
