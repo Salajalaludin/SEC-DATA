@@ -12,6 +12,15 @@ if PYDEPS.exists():
     sys.path.insert(0, str(PYDEPS))
 
 
+# Spatial scope (Methodology V2, Sprint 1): "Cilegon Local Climate".
+# A 0.2 x 0.2 degree box covering the 2x2 ERA5 grid cells (0.1 deg) nearest to
+# Kota Cilegon (approx. 106.01 E, 6.00 S). This replaces the former wide
+# Bandung-Cilegon corridor area, which was not a defensible local weather
+# representation. Keep in sync with era5_config()$extent in R/data_climate.R.
+# CDS "area" order: north, west, south, east.
+ERA5_AREA = [-5.95, 105.95, -6.15, 106.15]
+
+
 def parse_cdsapirc(path):
     config = {}
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -87,7 +96,7 @@ def main():
             "time": times,
             "data_format": "netcdf",
             "download_format": "unarchived",
-            "area": [-5.80, 105.85, -7.30, 107.85],
+            "area": ERA5_AREA,
         }
         if download_target.exists():
             download_target.unlink()

@@ -40,7 +40,7 @@ Package R yang dipakai: `shiny`, `ggplot2`, `readxl`, `terra`, `forecast`, dan `
 Ringkasan metodologi untuk penjelasan:
 
 - Data SAGON diperoleh dengan scraping halaman publik SAGON Cilegon melalui `update_sagon_daily.R`, bukan API resmi. Hasilnya disimpan sebagai cache `cache/sagon_daily_long.rds`.
-- ERA5 diambil melalui CDS API sebagai data jam-jaman, lalu diagregasi harian: suhu puncak memakai maksimum harian, kelembaban memakai rata-rata harian, dan curah hujan memakai total harian.
+- ERA5 diambil melalui CDS API sebagai data jam-jaman. **Methodology V2 (Sprint 1):** variabel t2m/d2m/tp diselaraskan per `valid_time` eksak (POSIXct UTC) sebelum agregasi harian, kelembaban relatif dihitung dari suhu dan dewpoint pada timestamp yang sama, dan scope spasial adalah **Cilegon Local Climate** (2x2 sel ERA5 0.1 derajat terdekat Kota Cilegon, lihat `era5_config()` di `R/data_climate.R`). Agregasi harian: suhu puncak = maksimum per jam, kelembaban = rata-rata RH per jam, hujan = total per hari.
 - Preprocessing meliputi merge berdasarkan tanggal, deduplikasi tanggal-pasar-komoditas, penghapusan baris harga/iklim yang tidak lengkap, serta pembentukan fitur lag, moving average 7 hari, volatilitas 7 hari, margin antar pasar, hari, dan bulan.
 - Persamaan residual SARIMA: `e_t = Y_t - SARIMA_t`. Residual ini menjadi target XGBoost residual. Prediksi hybrid memakai XGBoost harga langsung sebagai level utama, koreksi kecil dari komponen `SARIMA + XGBoost residual`, dan kalibrasi bias berbasis MAPE pada rolling test.
 - Orde SARIMA dipilih dengan `forecast::auto.arima()` setelah pengecekan kebutuhan differencing ADF/KPSS dan seasonal differencing.
@@ -56,6 +56,31 @@ Arsitektur yang dipakai sekarang:
 3. Hasil API disimpan sebagai NetCDF di `cache/era5_cds_nc/`, lalu diringkas ke cache harian:
    `cache/era5_daily_bandung_cilegon.rds`
 4. `app.R` hanya membaca cache terbaru. App tidak lagi mengunduh ERA5 dari CDS saat user membuka dashboard.
+
+Transformasi NetCDF -> harian dipusatkan di **`R/data_climate.R`** (Methodology V2)
+dan dipakai bersama oleh `update_era5_daily.R` dan `app.R` agar tidak ada dua
+implementasi yang menyimpang:
+
+- `valid_time` dipertahankan sebagai POSIXct UTC sampai t2m/d2m/tp diselaraskan
+  per timestamp eksak;
+- RH dihitung dari suhu + dewpoint pada timestamp yang sama;
+- tanggal lokal diturunkan dengan timezone `Asia/Jakarta`;
+- agregasi harian baru berjalan setelah alignment;
+- validasi dijalankan (duplikat timestamp, jumlah observasi/hari, RH 0-100,
+  presipitasi negatif, hari all-NA).
+
+Scope spasial = **Cilegon Local Climate** (`era5_config()$extent`,
+2x2 sel ERA5 0.1 derajat terdekat Kota Cilegon), disinkronkan dengan
+`ERA5_AREA` di `fetch_era5_cds.py`.
+
+Untuk membangun ulang cache harian dari file NetCDF lokal:
+
+```bash
+Rscript --vanilla scripts/rebuild_era5_cache.R
+```
+
+> Nama file cache `era5_daily_bandung_cilegon.rds` masih dipertahankan karena
+> direferensikan app/CI; isinya sekarang adalah Cilegon Local Climate.
 
 Keuntungan model ini:
 
