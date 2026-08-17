@@ -151,11 +151,34 @@ BMKG dipakai untuk mengisi kebutuhan prediksi 3 hari ke depan ketika ERA5 histor
 3. Harga tiga pasar diringkas menjadi harga rata-rata.
 4. Fitur harga, suhu, kelembaban, hujan, margin pasar, lag, moving average, volatilitas, hari, dan bulan dibentuk.
 5. Data diurutkan berdasarkan tanggal.
-6. Split evaluasi memakai 80 persen training dan 20 persen test.
-7. Test dilakukan dengan rolling forecast satu langkah ke depan.
-8. Model utama Hybrid SARIMA-XGBoost dipakai untuk prediksi H+1 sampai H+3.
-9. XGBoost klasifikasi dipakai untuk status risiko.
-10. SHAP dipakai untuk interpretasi model regresi dan klasifikasi.
+6. Evaluasi memakai protokol time-series (Methodology V2, Sprint 3): development -> rolling-origin validation -> final test untouched. Lihat `docs/EVALUATION_PROTOCOL.md`.
+7. Model utama Hybrid SARIMA-XGBoost dipakai untuk prediksi H+1 sampai H+3.
+8. XGBoost klasifikasi dipakai untuk status risiko.
+9. SHAP dipakai untuk interpretasi model regresi dan klasifikasi.
+
+## Evaluasi Model (Methodology V2, Sprint 3)
+
+Evaluasi di `R/evaluation.R`:
+
+- **Split kronologis**: `development period -> rolling-origin validation -> untouched final test`.
+- **Rolling-origin (expanding-window)**: fold ke-`o` melatih di `1..o` dan memvalidasi
+  `o+1..o+H`; origin maju setiap `validation_step`; hanya `max_folds` origin terakhir.
+- **Refit tiap origin**: SARIMA (`auto.arima`) dan XGBoost di-fit ulang pada histori
+  sampai `t-1` untuk tiap prediksi satu langkah — tidak ada "fit sekali lalu disebut
+  rolling".
+- **Baseline fair**: Naive (`actual[t-1]`), Seasonal Naive 7 (`actual[t-7]`), MA7
+  (`mean(actual[t-7..t-1])`), SARIMA-only, XGBoost Direct, Hybrid — semuanya memakai
+  informasi yang sama per origin.
+- **Metrik**: MAE, RMSE, WAPE, MAPE, dilaporkan untuk validasi dan final test.
+- **Tanpa tuning di final test**: grid bias yang dulu mencari bias pada test dihapus.
+  Satu-satunya bias adalah bias in-sample dari histori training (bagian formula hybrid
+  legacy yang dibekukan; redesign bobot di Sprint 4).
+- Konfigurasi ada di `eval_config()` (default aplikasi) dan `eval_config_full()`
+  (protokol penuh). Jalankan protokol penuh:
+
+  ```bash
+  Rscript --vanilla -e "source('scripts/run_evaluation.R')" Tomat --full
+  ```
 
 ## Fitur dan Aturan Timestamp (Methodology V2, Sprint 2)
 
@@ -346,9 +369,13 @@ Poin yang biasanya ditanyakan saat presentasi:
   yang membaca `harga[t]`; `ma7/vol7/min7/max7` memakai `harga[t-7..t-1]`;
   fitur margin forecasting memakai `margin_hl_lag1`; definisi fitur training =
   inference lewat `R/features.R`. Lihat bagian "Fitur dan Aturan Timestamp".
-- Train-test split memakai 80:20 berdasarkan urutan waktu.
-- Tidak ada data validasi terpisah.
-- Rolling forecast pada test dilakukan satu langkah ke depan.
+- **Evaluasi (Methodology V2, Sprint 3):** data kronologis dibagi development ->
+  rolling-origin validation -> final test untouched; SARIMA/XGBoost di-refit di tiap
+  origin; baseline Naive/SeasonalNaive7/MA7 memakai informasi yang sama; metrik
+  MAE/RMSE/WAPE/MAPE; tidak ada tuning bias pada final test. Lihat
+  `docs/EVALUATION_PROTOCOL.md`.
+- Rolling one-step pada validasi/final test: prediksi satu hari ke depan, aktual
+  diungkap, lalu masuk ke histori untuk langkah berikutnya.
 - Prediksi operasional H+1 sampai H+3 memakai prakiraan BMKG.
 - Residual SARIMA menjadi target XGBoost residual.
 - SHAP summary memakai banyak fitur, sedangkan dependence plot memakai satu fitur utama untuk membaca ambang efek.
