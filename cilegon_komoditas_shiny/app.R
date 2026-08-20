@@ -9,8 +9,8 @@ suppressPackageStartupMessages({
 
 set.seed(2026)
 
-app_file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
-if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- if (file.exists("cilegon_komoditas_shiny/app.R")) "cilegon_komoditas_shiny/app.R" else "app.R"
+app_file_arg <- if (file.exists("cilegon_komoditas_shiny/app.R")) "cilegon_komoditas_shiny/app.R" else sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
+if (is.na(app_file_arg) || !nzchar(app_file_arg)) app_file_arg <- "app.R"
 app_start_dir <- dirname(normalizePath(app_file_arg, winslash = "/", mustWork = FALSE))
 app_renviron <- file.path(app_start_dir, ".Renviron")
 if (file.exists(app_renviron)) readRenviron(app_renviron)

@@ -35,6 +35,10 @@ Model yang dijalankan di app:
 - XGBoost klasifikasi untuk status risiko. Karena data pasar tidak punya label kejadian gagal distribusi asli, label dibuat sebagai proxy dari lonjakan harga 3 hari ke depan atau kombinasi margin antar pasar tinggi dan suhu tinggi.
 - SHAP aktual dari XGBoost memakai `predict(model, predcontrib = TRUE)`.
 
+Full protocol Tomat yang selesai pada 20 Agustus 2026 memilih **Naive** berdasarkan
+validation WAPE 3.801593%; final-test WAPE 4.884106% hanya konfirmasi. App tidak
+meng-hardcode hasil ini dan tetap menampilkan kandidat yang dipilih evaluasi aktif.
+
 Package R yang dipakai: `shiny`, `ggplot2`, `readxl`, `terra`, `forecast`, dan `xgboost`.
 
 Ringkasan metodologi untuk penjelasan:

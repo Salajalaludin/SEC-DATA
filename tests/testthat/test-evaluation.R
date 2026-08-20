@@ -197,8 +197,10 @@ test_that("fit_forecast_models returns the expected structure", {
 })
 
 test_that("active model code has no legacy blend or arbitrary correction", {
+  root <- find_repo_root()
   active <- paste(
-    unlist(lapply(c("R/evaluation.R", "cilegon_komoditas_shiny/app.R"), readLines, warn = FALSE)),
+    unlist(lapply(file.path(root, c("R/evaluation.R", "cilegon_komoditas_shiny/app.R")),
+                  readLines, warn = FALSE)),
     collapse = "\n"
   )
   expect_false(grepl("0\\.001|0\\.999|\\+\\s*30", active))

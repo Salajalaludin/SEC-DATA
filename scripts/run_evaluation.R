@@ -1,4 +1,4 @@
-# Run the authoritative time-series evaluation (Methodology V2, Sprint 3).
+# Run the authoritative time-series evaluation and model selection (Methodology V2, Sprint 4).
 #
 # Full protocol: development period -> rolling-origin validation (expanding
 # window, model refit at every origin) -> untouched final test. Produces a

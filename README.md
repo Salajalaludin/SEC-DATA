@@ -182,6 +182,11 @@ Evaluasi di `R/evaluation.R`:
   Rscript --vanilla scripts/run_evaluation.R Tomat --full
   ```
 
+Hasil full protocol Tomat yang terverifikasi pada 20 Agustus 2026 memilih
+**Naive** dari validation WAPE terendah (3.801593%). Final-test WAPE 4.884106%
+hanya menjadi konfirmasi dan tidak mengubah champion. Dashboard tetap memilih
+secara dinamis; nama model tidak di-hardcode.
+
 ## Fitur dan Aturan Timestamp (Methodology V2, Sprint 2)
 
 **Aturan inti:** untuk target prediksi `Y[t]`, fitur turunan dari harga pasar hanya

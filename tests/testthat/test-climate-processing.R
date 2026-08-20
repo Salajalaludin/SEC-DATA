@@ -24,6 +24,11 @@ test_that("parse_era5_valid_time parses epoch seconds into UTC POSIXct", {
   expect_equal(attr(vt, "tzone"), "UTC")
 })
 
+test_that("parse_era5_valid_time returns NA without coercion warnings for unsupported names", {
+  expect_no_warning(vt <- parse_era5_valid_time(c("t2m_1", "d2m_2")))
+  expect_true(all(is.na(vt)))
+})
+
 # ---------------------------------------------------------------------------
 # Timezone conversion
 # ---------------------------------------------------------------------------

@@ -150,7 +150,27 @@ The app uses bounded defaults so it stays responsive (each one-step refit costs
 Rscript --vanilla scripts/run_evaluation.R Tomat --full
 ```
 
-## 11. Artifacts
+## 11. Latest verified Tomat result
+
+Full protocol completed successfully on 2026-08-20 with 12 validation folds
+(84 validation rows) and an untouched 125-row final test ending 2026-06-22.
+The frozen champion is **Naive**, selected only from validation WAPE.
+
+| Candidate | Validation MAE | Validation RMSE | Validation WAPE | Validation MAPE |
+|---|---:|---:|---:|---:|
+| **Naive (selected)** | **416.6667** | **613.9903** | **3.801593%** | **3.782219%** |
+| Seasonal Naive 7 | 928.5714 | 1180.7540 | 8.472122% | 8.484902% |
+| MA7 | 615.0794 | 792.2834 | 5.611875% | 5.589030% |
+| SARIMA | 490.0816 | 657.6158 | 4.471418% | 4.455828% |
+| XGBoost Direct | 439.3480 | 597.6609 | 4.008534% | 3.980597% |
+| SARIMA + XGBoost Residual | 464.6712 | 650.9018 | 4.239578% | 4.199446% |
+
+Final-test confirmation for the frozen Naive champion: MAE 629.3333, RMSE
+895.4204, WAPE 4.884106%, and MAPE 4.869648%. These final-test values did not
+participate in selection. The dashboard remains data-driven and does not
+hardcode Naive; a later successful evaluation may select a different candidate.
+
+## 12. Artifacts
 
 `scripts/run_evaluation.R` writes per-commodity:
 
@@ -158,7 +178,7 @@ Rscript --vanilla scripts/run_evaluation.R Tomat --full
 - `cilegon_komoditas_shiny/cache/evaluation/validation_metrics_<commodity>.csv`
 - `cilegon_komoditas_shiny/cache/evaluation/evaluation_<commodity>.rds`
 
-## 12. Tests
+## 13. Tests
 
 `tests/testthat/test-evaluation.R` covers chronological folds, no overlap/future
 leakage, expanding training windows, rolling baseline updates, final-test isolation,
