@@ -25,13 +25,13 @@ Harga pasar juga bisa dibaca dari cache scraper SAGON:
 
 Kalau file cache SAGON ini ada, `app.R` akan memprioritaskannya dibanding file Excel lokal.
 
-Untuk evaluasi (Methodology V2, Sprint 3), data diurutkan kronologis lalu dibagi menjadi `development period -> rolling-origin validation -> untouched final test`. Protokol ada di `R/evaluation.R` dan `docs/EVALUATION_PROTOCOL.md`. Model (SARIMA + XGBoost) **di-refit di setiap forecast origin** memakai histori sampai `t-1`; baseline Naive, Seasonal Naive 7, dan MA7 memakai informasi yang sama per origin; tidak ada tuning/kalibrasi bias pada final test. Prediksi operasional tetap dibuat untuk H+1 sampai H+3 dengan memakai prakiraan cuaca BMKG sebagai input iklim masa depan.
+Untuk evaluasi (Methodology V2, Sprint 4), data diurutkan kronologis lalu dibagi menjadi `development period -> rolling-origin validation -> untouched final test`. Protokol ada di `R/evaluation.R` dan `docs/EVALUATION_PROTOCOL.md`. Model (SARIMA + XGBoost) **di-refit di setiap forecast origin** memakai histori sampai `t-1`; baseline Naive, Seasonal Naive 7, dan MA7 memakai informasi yang sama per origin. Champion adalah kandidat dengan WAPE validasi terendah, dibekukan sebelum final test, lalu dipakai untuk prediksi H+1 sampai H+3 dengan prakiraan cuaca BMKG.
 
 Model yang dijalankan di app:
 
 - SARIMA/ARIMA aktual dengan `forecast::auto.arima()` pada harga rata-rata tiga pasar.
 - XGBoost regresi untuk memodelkan residual SARIMA.
-- Prediksi utama: Hybrid SARIMA-XGBoost. Naive, MA7, SARIMA-only, dan XGBoost harga langsung hanya dipakai sebagai pembanding evaluasi.
+- Kandidat harga: SARIMA, XGBoost Direct, dan SARIMA + XGBoost Residual, bersama Naive, Seasonal Naive 7, dan MA7. Dashboard memakai champion validasi sebenarnya.
 - XGBoost klasifikasi untuk status risiko. Karena data pasar tidak punya label kejadian gagal distribusi asli, label dibuat sebagai proxy dari lonjakan harga 3 hari ke depan atau kombinasi margin antar pasar tinggi dan suhu tinggi.
 - SHAP aktual dari XGBoost memakai `predict(model, predcontrib = TRUE)`.
 
@@ -43,9 +43,9 @@ Ringkasan metodologi untuk penjelasan:
 - ERA5 diambil melalui CDS API sebagai data jam-jaman. **Methodology V2 (Sprint 1):** variabel t2m/d2m/tp diselaraskan per `valid_time` eksak (POSIXct UTC) sebelum agregasi harian, kelembaban relatif dihitung dari suhu dan dewpoint pada timestamp yang sama, dan scope spasial adalah **Cilegon Local Climate** (2x2 sel ERA5 0.1 derajat terdekat Kota Cilegon, lihat `era5_config()` di `R/data_climate.R`). Agregasi harian: suhu puncak = maksimum per jam, kelembaban = rata-rata RH per jam, hujan = total per hari.
 - Preprocessing meliputi merge berdasarkan tanggal, deduplikasi tanggal-pasar-komoditas, penghapusan baris harga/iklim yang tidak lengkap, serta pembentukan fitur lag, moving average 7 hari, volatilitas 7 hari, margin antar pasar, hari, dan bulan.
 - **Fitur (Methodology V2, Sprint 2):** seluruh feature engineering dipusatkan di **`R/features.R`** dan dipakai identik untuk training, test, dan live inference (`build_training_features()` / `build_future_feature_row()`). Tidak ada fitur harga untuk target `t` yang membaca `harga[t]`; `ma7/vol7/min7/max7` memakai `harga[t-7..t-1]` (baris riwayat < 7 hari di-buang); fitur margin forecasting memakai `margin_hl_lag1[t] = margin_hl[t-1]`. `margin_hl` (hari yang sama) hanya dipakai untuk label proxy risiko, bukan prediktor. Test anti-leakage: `tests/testthat/test-lag-features.R`, `tests/testthat/test-no-target-leakage.R`.
-- Persamaan residual SARIMA: `e_t = Y_t - SARIMA_t`. Residual ini menjadi target XGBoost residual. Prediksi hybrid memakai XGBoost harga langsung sebagai level utama, koreksi kecil dari komponen `SARIMA + XGBoost residual`, dan bias in-sample dari histori training. Tidak ada kalibrasi bias memakai final test.
+- Persamaan residual SARIMA: `e_t = Y_t - SARIMA_t`. Residual ini menjadi target XGBoost residual. Kandidat residual menghitung `max(0, SARIMA + XGBoost predicted residual)`. XGBoost Direct tetap terpisah; weighted blend, `hybrid_bias`, dan koreksi manual warisan sudah dihapus.
 - Orde SARIMA dipilih dengan `forecast::auto.arima()` setelah pengecekan kebutuhan differencing ADF/KPSS dan seasonal differencing.
-- XGBoost memakai parameter tetap: `max_depth = 3`, `eta = 0.05`, `nrounds = 120`, `subsample = 0.9`, dan `colsample_bytree = 0.9`. Tidak ada cross-validation dan tidak ada early stopping agar alur tetap training-test-prediksi.
+- XGBoost memakai konfigurasi tetap: `max_depth = 3`, `eta = 0.05`, `nrounds = 120`, `subsample = 0.9`, dan `colsample_bytree = 0.9`. Tidak ada pencarian hyperparameter atau early stopping; konfigurasi ini tidak disebut best/optimal.
 - SHAP summary plot memakai banyak fitur untuk ranking importance. SHAP dependence plot memakai satu fitur suhu utama agar ambang efek suhu mudah dibaca.
 
 ## Arsitektur update ERA5

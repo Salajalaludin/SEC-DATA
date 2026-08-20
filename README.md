@@ -1,6 +1,6 @@
 # SEC-DATA: Dashboard Komoditas Pangan Cilegon
 
-Repositori ini berisi dashboard R Shiny untuk monitoring harga komoditas pangan Kota Cilegon, prediksi harga 3 hari ke depan, dan early warning risiko distribusi berbasis suhu. Sistem menggabungkan harga pasar SAGON, data iklim historis ERA5, prakiraan cuaca BMKG, model Hybrid SARIMA-XGBoost, dan interpretasi SHAP.
+Repositori ini berisi dashboard R Shiny untuk monitoring harga komoditas pangan Kota Cilegon, prediksi harga 3 hari ke depan, dan early warning risiko distribusi berbasis suhu. Sistem menggabungkan harga pasar SAGON, data iklim historis ERA5, prakiraan cuaca BMKG, kandidat SARIMA/XGBoost, dan interpretasi SHAP.
 
 ## Status Metodologi
 
@@ -152,11 +152,11 @@ BMKG dipakai untuk mengisi kebutuhan prediksi 3 hari ke depan ketika ERA5 histor
 4. Fitur harga, suhu, kelembaban, hujan, margin pasar, lag, moving average, volatilitas, hari, dan bulan dibentuk.
 5. Data diurutkan berdasarkan tanggal.
 6. Evaluasi memakai protokol time-series (Methodology V2, Sprint 3): development -> rolling-origin validation -> final test untouched. Lihat `docs/EVALUATION_PROTOCOL.md`.
-7. Model utama Hybrid SARIMA-XGBoost dipakai untuk prediksi H+1 sampai H+3.
+7. Kandidat dengan WAPE rolling-validation terendah dibekukan dan dipakai untuk prediksi H+1 sampai H+3.
 8. XGBoost klasifikasi dipakai untuk status risiko.
 9. SHAP dipakai untuk interpretasi model regresi dan klasifikasi.
 
-## Evaluasi Model (Methodology V2, Sprint 3)
+## Evaluasi Model (Methodology V2, Sprint 4)
 
 Evaluasi di `R/evaluation.R`:
 
@@ -166,18 +166,20 @@ Evaluasi di `R/evaluation.R`:
 - **Refit tiap origin**: SARIMA (`auto.arima`) dan XGBoost di-fit ulang pada histori
   sampai `t-1` untuk tiap prediksi satu langkah — tidak ada "fit sekali lalu disebut
   rolling".
-- **Baseline fair**: Naive (`actual[t-1]`), Seasonal Naive 7 (`actual[t-7]`), MA7
-  (`mean(actual[t-7..t-1])`), SARIMA-only, XGBoost Direct, Hybrid — semuanya memakai
+- **Kandidat fair**: Naive (`actual[t-1]`), Seasonal Naive 7 (`actual[t-7]`), MA7
+  (`mean(actual[t-7..t-1])`), SARIMA, XGBoost Direct, SARIMA + XGBoost Residual — semuanya memakai
   informasi yang sama per origin.
 - **Metrik**: MAE, RMSE, WAPE, MAPE, dilaporkan untuk validasi dan final test.
-- **Tanpa tuning di final test**: grid bias yang dulu mencari bias pada test dihapus.
-  Satu-satunya bias adalah bias in-sample dari histori training (bagian formula hybrid
-  legacy yang dibekukan; redesign bobot di Sprint 4).
+- **Seleksi champion**: WAPE validasi terendah menang; nilai non-finite diabaikan,
+  pilihan dibekukan sebelum final test, dan final test hanya untuk konfirmasi.
+- **Pseudo-hybrid dihapus**: kandidat residual adalah
+  `max(0, SARIMA + XGBoost predicted residual)`. XGBoost Direct tetap terpisah;
+  tidak ada weighted blend, `hybrid_bias`, atau koreksi manual.
 - Konfigurasi ada di `eval_config()` (default aplikasi) dan `eval_config_full()`
   (protokol penuh). Jalankan protokol penuh:
 
   ```bash
-  Rscript --vanilla -e "source('scripts/run_evaluation.R')" Tomat --full
+  Rscript --vanilla scripts/run_evaluation.R Tomat --full
   ```
 
 ## Fitur dan Aturan Timestamp (Methodology V2, Sprint 2)
@@ -229,12 +231,13 @@ Residual ini menjadi target XGBoost residual.
 
 ### XGBoost Regresi
 
-Ada dua regresi XGBoost:
+Ada dua regresi XGBoost dengan konfigurasi tetap:
 
 - XGBoost residual untuk memodelkan `e_t`
-- XGBoost harga langsung untuk menangkap level harga aktual
+- XGBoost harga langsung untuk memprediksi level harga sebagai kandidat terpisah
 
-Model utama adalah Hybrid SARIMA-XGBoost. Naive, MA7, SARIMA-only, dan XGBoost harga langsung hanya dipakai sebagai pembanding evaluasi.
+Kandidat residual menghitung `max(0, SARIMA + XGBoost residual)`. Champion operasional
+adalah kandidat dengan WAPE rolling-validation terendah, bukan model yang di-hardcode.
 
 Parameter XGBoost dibuat tetap agar alur tetap sederhana:
 
@@ -246,7 +249,8 @@ subsample = 0.9
 colsample_bytree = 0.9
 ```
 
-Tidak ada data validasi terpisah, tidak ada cross-validation, dan tidak ada early stopping.
+Tidak ada pencarian hyperparameter atau early stopping. Konfigurasi tetap ini tidak
+disebut "best" atau "optimal"; rolling-validation hanya memilih kandidat model.
 
 ### XGBoost Klasifikasi
 

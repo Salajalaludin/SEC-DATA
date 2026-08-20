@@ -1,4 +1,4 @@
-# evaluation.R — Time-series evaluation (Methodology V2, Sprint 3)
+# evaluation.R — Time-series evaluation and model selection (Methodology V2, Sprint 4)
 #
 # Statistically valid evaluation using time-ordered data:
 #
@@ -12,13 +12,9 @@
 #   * every baseline receives the same information availability at each origin;
 #   * the final test is isolated and evaluated only after all decisions are
 #     frozen (no tuning/calibration/selection on the final test);
-#   * no final-test bias tuning (the old hybrid_bias_grid search is gone).
-#
-# The in-sample bias inside the hybrid definition (median of recent 14
-# residuals + 30) is part of the frozen legacy model formula (see
-# fit_forecast_models) and is recomputed only from training history at each
-# origin; it is never fit from the final test. Hybrid weights will be redesigned
-# in Sprint 4, not here.
+#   * lowest development-validation WAPE selects the champion before the final
+#     test is evaluated;
+#   * no final-test bias tuning or manual forecast correction.
 #
 # Depends on R/features.R (build_future_feature_row, align_future_matrix) and
 # packages forecast and xgboost.
@@ -50,7 +46,7 @@ eval_config <- function() {
 
 #' Full-protocol configuration for scripts/run_evaluation.R (authoritative).
 eval_config_full <- function() {
-  c(eval_config(), list(
+  utils::modifyList(eval_config(), list(
     max_folds = 12L,
     final_test_size = 0.12,
     min_final_test_obs = 42L
@@ -118,6 +114,12 @@ rolling_origin_folds <- function(dev, config = eval_config()) {
 #' @param predicted numeric vector of predicted values.
 #' @return data.frame with MAE, RMSE, WAPE, MAPE.
 eval_metrics <- function(actual, predicted) {
+  ok <- is.finite(actual) & is.finite(predicted)
+  if (!any(ok)) {
+    return(data.frame(MAE = NaN, RMSE = NaN, WAPE = NaN, MAPE = NaN))
+  }
+  actual <- actual[ok]
+  predicted <- predicted[ok]
   err <- actual - predicted
   data.frame(
     MAE = mean(abs(err), na.rm = TRUE),
@@ -125,6 +127,33 @@ eval_metrics <- function(actual, predicted) {
     WAPE = sum(abs(err), na.rm = TRUE) / sum(pmax(abs(actual), 1), na.rm = TRUE),
     MAPE = mean(abs(err) / pmax(abs(actual), 1), na.rm = TRUE),
     stringsAsFactors = FALSE
+  )
+}
+
+MODEL_LABELS <- c(
+  naive = "Naive",
+  sNaive7 = "Seasonal Naive 7",
+  ma7 = "MA7",
+  sarima = "SARIMA",
+  xgb_price = "XGBoost Direct",
+  residual_hybrid = "SARIMA + XGBoost Residual"
+)
+
+residual_hybrid_prediction <- function(sarima, xgb_residual) {
+  pmax(0, sarima + xgb_residual)
+}
+
+candidate_prediction <- function(predictions, model_key) predictions[[model_key]]
+
+select_champion <- function(validation_metrics) {
+  eligible <- which(is.finite(validation_metrics$WAPE))
+  if (length(eligible) == 0) stop("Tidak ada validation WAPE yang finite.", call. = FALSE)
+  i <- eligible[[which.min(validation_metrics$WAPE[eligible])]]
+  list(
+    key = validation_metrics$model_key[[i]],
+    label = validation_metrics$model[[i]],
+    metric = "WAPE",
+    value = validation_metrics$WAPE[[i]]
   )
 }
 
@@ -136,17 +165,16 @@ eval_metrics <- function(actual, predicted) {
 #'
 #' This is the single fitting implementation shared by evaluation
 #' (refit per origin) and the live pipeline (app.R). Fitting configuration is
-#' identical to the legacy model: auto.arima(seasonal=TRUE, stepwise=TRUE,
+#' uses auto.arima(seasonal=TRUE, stepwise=TRUE,
 #' approximation=FALSE, allowdrift=TRUE, allowmean=TRUE), XGBoost fixed params
 #' max_depth=3, eta=0.05, nrounds=120, subsample=0.9, colsample_bytree=0.9,
-#' and hybrid = pmax(0, 0.001*(sarima+xgb_residual) + 0.999*xgb_price + bias)
-#' with in-sample bias = median(last 14 residuals) + 30. No SHAP/risk overhead
-#' is computed here (those are added by app.R's fit_pipeline_models).
+#' and residual_hybrid = pmax(0, sarima + xgb_residual). XGBoost Direct remains
+#' a separate candidate. No SHAP/risk overhead is computed here (those are
+#' added by app.R's fit_pipeline_models).
 #'
 #' @param history_avg sorted "Harga rata-rata" frame with features.
 #' @return list(models = list(sarima, xgb_reg, xgb_price), feature_formula,
-#'   feature_cols, x_reg, model_frame, hybrid_bias, stationarity_label,
-#'   sarima_label).
+#'   feature_cols, x_reg, model_frame, stationarity_label, sarima_label).
 fit_forecast_models <- function(history_avg) {
   set.seed(2026)
   price_ts <- ts(history_avg$harga, frequency = 7)
@@ -183,11 +211,9 @@ fit_forecast_models <- function(history_avg) {
   xgb_price_fit <- as.numeric(predict(xgb_price, x_reg))
   model_frame$xgb_residual <- xgb_residual_fit
   model_frame$xgb_price <- xgb_price_fit
-  residual_hybrid <- model_frame$sarima + model_frame$xgb_residual
-  hybrid_raw <- 0.001 * residual_hybrid + 0.999 * model_frame$xgb_price
-  recent_bias <- tail(model_frame$harga - hybrid_raw, min(14, nrow(model_frame)))
-  hybrid_bias <- if (all(is.na(recent_bias))) 30 else stats::median(recent_bias, na.rm = TRUE) + 30
-  model_frame$hybrid <- pmax(0, hybrid_raw + hybrid_bias)
+  model_frame$residual_hybrid <- residual_hybrid_prediction(
+    model_frame$sarima, model_frame$xgb_residual
+  )
 
   ord <- forecast::arimaorder(sarima_model)
   sarima_label <- if (all(c("P", "D", "Q", "Frequency") %in% names(ord))) {
@@ -203,7 +229,6 @@ fit_forecast_models <- function(history_avg) {
     feature_cols = colnames(x_reg),
     x_reg = x_reg,
     model_frame = model_frame,
-    hybrid_bias = hybrid_bias,
     stationarity_label = paste0("ADF d=", d_adf, ", KPSS d=", d_kpss, ", seasonal D=", d_seasonal),
     sarima_label = sarima_label
   )
@@ -213,17 +238,17 @@ fit_forecast_models <- function(history_avg) {
 # One-step prediction
 # ---------------------------------------------------------------------------
 
-#' One-step-ahead hybrid prediction for a target day using current history.
+#' One-step-ahead candidate predictions for a target day using current history.
 #'
 #' Refits are done by the caller (rolling_one_step_eval); this function uses the
 #' fitted model and the currently available history to build the feature row via
 #' the shared feature builder, then predicts SARIMA, XGBoost-residual,
-#' XGBoost-direct, and the hybrid. Identical formula to the live forecast path.
+#' XGBoost-direct, and the residual hybrid. Identical formula to the live path.
 #'
 #' @param fit_obj output of fit_forecast_models().
 #' @param history_avg sorted frame of history up to day t-1 (has margin_hl).
 #' @param target_row one-row frame for day t (tanggal, suhu_puncak, kelembaban, hujan).
-#' @return data.frame with sarima, xgb_residual, xgb_price, hybrid.
+#' @return data.frame with sarima, xgb_residual, xgb_price, residual_hybrid.
 predict_one_day_hybrid <- function(fit_obj, history_avg, target_row) {
   row <- build_future_feature_row(
     prices = history_avg$harga,
@@ -238,9 +263,10 @@ predict_one_day_hybrid <- function(fit_obj, history_avg, target_row) {
   sarima_pred <- as.numeric(forecast::forecast(fit_obj$models$sarima, h = 1)$mean)
   xgb_resid <- as.numeric(predict(fit_obj$models$xgb_reg, x_row))
   xgb_price_pred <- as.numeric(predict(fit_obj$models$xgb_price, x_row))
-  hybrid <- max(0, 0.001 * (sarima_pred + xgb_resid) + 0.999 * xgb_price_pred + fit_obj$hybrid_bias)
+  residual_hybrid <- residual_hybrid_prediction(sarima_pred, xgb_resid)
   data.frame(sarima = sarima_pred, xgb_residual = xgb_resid,
-             xgb_price = xgb_price_pred, hybrid = hybrid, stringsAsFactors = FALSE)
+             xgb_price = xgb_price_pred, residual_hybrid = residual_hybrid,
+             stringsAsFactors = FALSE)
 }
 
 # ---------------------------------------------------------------------------
@@ -258,7 +284,7 @@ predict_one_day_hybrid <- function(fit_obj, history_avg, target_row) {
 #' @param targets sorted frame of target days to evaluate (one-step).
 #' @param config list from eval_config().
 #' @return data.frame with tanggal, actual, naive, sNaive7, ma7, sarima,
-#'   xgb_residual, xgb_price, hybrid.
+#'   xgb_residual, xgb_price, residual_hybrid.
 rolling_one_step_eval <- function(history, targets, config = eval_config()) {
   h <- history
   out <- vector("list", nrow(targets))
@@ -277,7 +303,7 @@ rolling_one_step_eval <- function(history, targets, config = eval_config()) {
       sarima = pred$sarima,
       xgb_residual = pred$xgb_residual,
       xgb_price = pred$xgb_price,
-      hybrid = pred$hybrid,
+      residual_hybrid = pred$residual_hybrid,
       stringsAsFactors = FALSE
     )
     h <- rbind(h, target)
@@ -307,19 +333,20 @@ evaluate_pipeline <- function(avg, config = eval_config()) {
   val_long <- do.call(rbind, lapply(folds, function(f) {
     rolling_one_step_eval(f$train, f$valid, config)
   }))
-  final_long <- rolling_one_step_eval(split$development, split$final_test, config)
-
-  model_names <- c("naive", "sNaive7", "ma7", "sarima", "xgb_price", "hybrid")
-  label_map <- c(naive = "Naive", sNaive7 = "Seasonal Naive 7", ma7 = "MA7",
-                 sarima = "SARIMA-only", xgb_price = "XGBoost Direct", hybrid = "Hybrid")
+  model_names <- names(MODEL_LABELS)
   metrics_for <- function(long) {
     do.call(rbind, lapply(model_names, function(m) {
       mm <- eval_metrics(long$actual, long[[m]])
-      mm$model <- unname(label_map[[m]])
-      mm[, c("model", "MAE", "RMSE", "WAPE", "MAPE"), drop = FALSE]
+      mm$model_key <- m
+      mm$model <- unname(MODEL_LABELS[[m]])
+      mm[, c("model_key", "model", "MAE", "RMSE", "WAPE", "MAPE"), drop = FALSE]
     }))
   }
   val_metrics <- metrics_for(val_long)
+  selection <- select_champion(val_metrics)
+
+  # Selection is frozen here; final-test predictions cannot change it.
+  final_long <- rolling_one_step_eval(split$development, split$final_test, config)
   final_metrics <- metrics_for(final_long)
 
   list(
@@ -327,6 +354,10 @@ evaluate_pipeline <- function(avg, config = eval_config()) {
     final_test_long = final_long,
     validation_metrics = val_metrics,
     final_test_metrics = final_metrics,
+    selected_model_key = selection$key,
+    selected_model = selection$label,
+    selection_metric = selection$metric,
+    selection_value = selection$value,
     config = config,
     n_folds = length(folds),
     split = list(
