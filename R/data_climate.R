@@ -48,7 +48,9 @@ era5_config <- function() {
 #' @param layer_names character vector of layer names.
 #' @return POSIXct in UTC.
 parse_era5_valid_time <- function(layer_names) {
-  seconds <- as.numeric(sub(".*valid_time=([0-9]+).*", "\\1", layer_names))
+  matched <- grepl("valid_time=[0-9]+", layer_names)
+  seconds <- rep(NA_real_, length(layer_names))
+  seconds[matched] <- as.numeric(sub(".*valid_time=([0-9]+).*", "\\1", layer_names[matched]))
   as.POSIXct(seconds, origin = "1970-01-01", tz = era5_config()$tz_utc)
 }
 
@@ -96,7 +98,16 @@ relative_humidity <- function(temp_c, dewpoint_c) {
 #' @return data.frame with columns valid_time (POSIXct UTC) and value.
 read_era5_variable <- function(path, subds, extent, fun = "mean") {
   r <- terra::crop(terra::rast(path, subds = subds), extent)
-  vt <- parse_era5_valid_time(names(r))
+  raster_time <- if (isTRUE(terra::has.time(r))) terra::time(r) else NULL
+  vt <- if (length(raster_time) == terra::nlyr(r) &&
+            (inherits(raster_time, "POSIXt") || inherits(raster_time, "Date"))) {
+    as.POSIXct(raster_time, tz = era5_config()$tz_utc)
+  } else {
+    parse_era5_valid_time(names(r))
+  }
+  if (length(vt) != terra::nlyr(r) || anyNA(vt) || anyDuplicated(vt)) {
+    stop("Metadata valid_time ERA5 tidak lengkap atau duplikat: ", path, call. = FALSE)
+  }
   vals <- as.numeric(terra::global(r, fun, na.rm = TRUE)[, 1])
   data.frame(valid_time = vt, value = vals)
 }

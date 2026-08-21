@@ -1,4 +1,4 @@
-# Run the authoritative time-series evaluation (Methodology V2, Sprint 3).
+# Run the authoritative time-series evaluation and model selection (Methodology V2, Sprint 4).
 #
 # Full protocol: development period -> rolling-origin validation (expanding
 # window, model refit at every origin) -> untouched final test. Produces a
@@ -38,6 +38,8 @@ run_one <- function(commodity, cfg) {
   cat("validation folds:", ev$n_folds, " (n rows =", nrow(ev$validation_long), ")\n")
   cat("--- validation metrics ---\n")
   print(ev$validation_metrics, row.names = FALSE)
+  cat("selected champion:", ev$selected_model, "(", ev$selected_model_key,
+      ") by validation", ev$selection_metric, "=", ev$selection_value, "\n")
   cat("--- final test metrics ---\n")
   print(ev$final_test_metrics, row.names = FALSE)
   ev

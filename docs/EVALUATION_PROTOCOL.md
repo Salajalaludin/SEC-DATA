@@ -1,7 +1,7 @@
-# EVALUATION PROTOCOL — Methodology V2 (Sprint 3)
+# EVALUATION PROTOCOL — Methodology V2 (Sprint 4)
 
-Status: **applicable as of Sprint 3**. Supersedes the legacy "80/20 test + MAPE bias grid"
-evaluation recorded in `docs/METHODOLOGY_V1_BASELINE.md`.
+Status: **applicable as of Sprint 4**. Supersedes the legacy "80/20 test + MAPE bias grid"
+evaluation and pseudo-hybrid recorded in `docs/METHODOLOGY_V1_BASELINE.md`.
 
 ## 1. Purpose
 
@@ -34,7 +34,7 @@ Implemented by `rolling_origin_folds()`:
 
 - Minimum training observations: `min_train_obs` (default 60).
 - Validation horizon per fold: `validation_horizon` = H days (default 7).
-- Step between origins: `validation_step` (default 14 for the app, 7 for the full
+- Step between origins: `validation_step` (default 7 for both app and full
   protocol). Windows are disjoint when `validation_step >= validation_horizon`.
 - Number of origins capped by `max_folds` (keeps the most recent origins, bounding
   cost).
@@ -86,10 +86,13 @@ therefore receives the identical information set as the advanced models:
 - Naive: `Naive[t] = Actual[t-1]`
 - Seasonal Naive 7: `SeasonalNaive7[t] = Actual[t-7]`
 - MA7: `MA7[t] = mean(Actual[t-7 .. t-1])`
-- SARIMA-only: refit `auto.arima`, one-step mean forecast
+- SARIMA: refit `auto.arima`, one-step mean forecast
 - XGBoost Direct: refit XGBoost on price level, one-step forecast
-- Hybrid (current candidate): `max(0, 0.001*(SARIMA + XGBoost-residual) + 0.999*XGBoost-direct + bias)`,
-  with the in-sample bias recomputed from training history at each origin.
+- SARIMA + XGBoost Residual: `max(0, SARIMA + XGBoost-predicted-residual)`
+
+XGBoost Direct is a separate candidate and is never called by the residual-hybrid
+formula. The former weighted blend, `hybrid_bias`, and arbitrary offset have been
+removed from active code.
 
 Baselines are not held constant across the evaluation period.
 
@@ -107,13 +110,18 @@ separately. One-step-ahead is the evaluated horizon; per-horizon H+2/H+3 metrics
 not produced in this protocol (no actuals for those horizons under one-step
 evaluation).
 
-## 8. Calibration rules
+## 8. Model selection and calibration rules
 
-- The test-set bias grid (`hybrid_bias_grid` over the final test) is **removed**.
-- The only bias in the current hybrid is the in-sample bias recomputed from training
-  history at each origin (median of the last 14 in-sample residuals + 30). It is part
-  of the frozen legacy hybrid formula and is not fit from any test data. Hybrid-weight
-  redesign is Sprint 4.
+- Primary selection metric: **lowest finite rolling-validation WAPE wins**.
+- NaN/non-finite WAPE values are excluded. Ties are deterministic in the documented
+  candidate order: Naive, Seasonal Naive 7, MA7, SARIMA, XGBoost Direct,
+  SARIMA + XGBoost Residual.
+- MAE, RMSE, and MAPE are supporting evidence; no weighted score is used.
+- The selected key and label are frozen before the final-test prediction path runs.
+- The final test confirms the frozen choice only; it cannot replace the champion.
+- XGBoost uses one fixed configuration (`max_depth=3`, `eta=0.05`, `nrounds=120`,
+  `subsample=0.9`, `colsample_bytree=0.9`). It is not described as best or optimal.
+- No bias grid, manual correction, hyperparameter search, or final-test selection is used.
 
 ## 9. Untouched-test rule
 
@@ -142,7 +150,27 @@ The app uses bounded defaults so it stays responsive (each one-step refit costs
 Rscript --vanilla scripts/run_evaluation.R Tomat --full
 ```
 
-## 11. Artifacts
+## 11. Latest verified Tomat result
+
+Full protocol completed successfully on 2026-08-20 with 12 validation folds
+(84 validation rows) and an untouched 125-row final test ending 2026-06-22.
+The frozen champion is **Naive**, selected only from validation WAPE.
+
+| Candidate | Validation MAE | Validation RMSE | Validation WAPE | Validation MAPE |
+|---|---:|---:|---:|---:|
+| **Naive (selected)** | **416.6667** | **613.9903** | **3.801593%** | **3.782219%** |
+| Seasonal Naive 7 | 928.5714 | 1180.7540 | 8.472122% | 8.484902% |
+| MA7 | 615.0794 | 792.2834 | 5.611875% | 5.589030% |
+| SARIMA | 490.0816 | 657.6158 | 4.471418% | 4.455828% |
+| XGBoost Direct | 439.3480 | 597.6609 | 4.008534% | 3.980597% |
+| SARIMA + XGBoost Residual | 464.6712 | 650.9018 | 4.239578% | 4.199446% |
+
+Final-test confirmation for the frozen Naive champion: MAE 629.3333, RMSE
+895.4204, WAPE 4.884106%, and MAPE 4.869648%. These final-test values did not
+participate in selection. The dashboard remains data-driven and does not
+hardcode Naive; a later successful evaluation may select a different candidate.
+
+## 12. Artifacts
 
 `scripts/run_evaluation.R` writes per-commodity:
 
@@ -150,8 +178,9 @@ Rscript --vanilla scripts/run_evaluation.R Tomat --full
 - `cilegon_komoditas_shiny/cache/evaluation/validation_metrics_<commodity>.csv`
 - `cilegon_komoditas_shiny/cache/evaluation/evaluation_<commodity>.rds`
 
-## 12. Tests
+## 13. Tests
 
 `tests/testthat/test-evaluation.R` covers chronological folds, no overlap/future
 leakage, expanding training windows, rolling baseline updates, final-test isolation,
-and metric calculations.
+the residual-hybrid formula, XGBoost Direct independence, validation-only champion
+selection, legacy-constant removal, and metric calculations.
