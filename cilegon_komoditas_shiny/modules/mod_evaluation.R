@@ -6,8 +6,8 @@ mod_evaluation_ui <- function(id) {
         6,
         shiny::div(
           class = "card",
-          shiny::div("In-app final test preview (bounded)", class = "section-title"),
-          shiny::div("Blok terbaru tetap untouched, tetapi app memakai eval_config() bounded defaults (2 fold, minimum 14 hari). Canonical full-protocol metrics ada di docs/EVALUATION_PROTOCOL.md.", class = "section-subtitle"),
+          shiny::div("In-app final test", class = "section-title"),
+          shiny::div("Blok terbaru tetap untouched. App memakai cache evaluasi full-protocol yang cocok bila tersedia; jika tidak, app menjalankan eval_config() bounded. Canonical protocol ada di docs/EVALUATION_PROTOCOL.md.", class = "section-subtitle"),
           shiny::tableOutput(ns("testMetrics"))
         )
       ),
@@ -24,7 +24,7 @@ mod_evaluation_ui <- function(id) {
     shiny::div(
       class = "card",
       shiny::div("In-app final-test APE per model", class = "section-title"),
-      shiny::div("Absolute percentage error per tanggal untuk preview bounded app; full-protocol artifacts tetap menjadi rujukan metrik final", class = "section-subtitle"),
+      shiny::div("Absolute percentage error per tanggal pada hasil evaluasi yang sedang dipakai; metrik full-protocol tetap dirujuk dari artefak yang tanggal cache-nya cocok", class = "section-subtitle"),
       shiny::plotOutput(ns("rollingTestPlot"), height = 300)
     ),
     shiny::div(
@@ -104,7 +104,7 @@ mod_evaluation_server <- function(id, state) {
           "XGBoost Direct" = "#ffd0a0",
           "SARIMA + XGBoost Residual" = "#f5a623"
         )) +
-        ggplot2::labs(title = "In-app final-test APE (bounded)", x = "Tanggal", y = "APE (%)", color = NULL) +
+        ggplot2::labs(title = "In-app final-test APE", x = "Tanggal", y = "APE (%)", color = NULL) +
         theme_dark_cilegon()
     })
 

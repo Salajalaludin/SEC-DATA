@@ -2,7 +2,6 @@ suppressPackageStartupMessages({
   library(shiny)
   library(ggplot2)
   library(readxl)
-  library(terra)
   library(forecast)
   library(xgboost)
 })
@@ -59,10 +58,6 @@ initial_commodity <- if (length(tomato_index) > 0) {
   names(commodity_files)[[1]]
 }
 
-# Immutable bootstrap artifact. Each session owns the reactive container that
-# receives this snapshot and replaces it independently on refresh.
-bootstrap_snapshot <- build_dashboard_state(initial_commodity, app_start_dir, config)
-
 ui <- fluidPage(
   tags$head(
     tags$title("Dashboard Tomat Cilegon"),
@@ -80,8 +75,8 @@ ui <- fluidPage(
       "Dashboard",
       mod_monitoring_ui(
         "monitoring",
-        bootstrap_snapshot$commodity_choices,
-        bootstrap_snapshot$commodity
+        names(commodity_files),
+        initial_commodity
       ),
       fluidRow(mod_forecast_ui("forecast"), mod_risk_ui("risk"))
     ),
@@ -93,15 +88,42 @@ ui <- fluidPage(
 )
 
 server <- function(input, output, session) {
-  state <- reactiveVal(bootstrap_snapshot)
+  # Build the first model state after the worker has flushed the lightweight UI.
+  # This keeps expensive model/evaluation/SHAP work out of shinyapps.io worker
+  # startup, while every session still owns an independent reactive state.
+  state <- reactiveVal(NULL)
+
+  build_state <- function(commodity_value) {
+    evaluation_builder <- function(avg, evaluation_config) {
+      cached <- read_cached_evaluation(avg, app_start_dir, commodity_value)
+      if (!is.null(cached)) {
+        return(cached)
+      }
+      evaluate_pipeline(avg, evaluation_config)
+    }
+    pipeline_builder <- function(df, bmkg_forecast, forecast_horizon) {
+      build_pipeline(
+        df,
+        bmkg_forecast,
+        forecast_horizon,
+        evaluation_builder = evaluation_builder
+      )
+    }
+    build_dashboard_state(
+      commodity_value,
+      app_start_dir,
+      config,
+      pipeline_builder = pipeline_builder
+    )
+  }
 
   refresh_dashboard <- function(commodity_value = NULL) {
     previous_state <- isolate(state())
     if (is.null(commodity_value) || !nzchar(commodity_value)) {
-      commodity_value <- previous_state$commodity
+      commodity_value <- if (is.null(previous_state)) initial_commodity else previous_state$commodity
     }
     tryCatch({
-      next_state <- build_dashboard_state(commodity_value, app_start_dir, config)
+      next_state <- build_state(commodity_value)
       state(next_state)
       showNotification("Data realtime berhasil diperbarui.", type = "message", duration = 3)
       invisible(TRUE)
@@ -125,6 +147,18 @@ server <- function(input, output, session) {
   mod_risk_server("risk", state)
   mod_evaluation_server("evaluation", state)
   mod_shap_server("shap", state)
+
+  session$onFlushed(function() {
+    tryCatch({
+      state(build_state(initial_commodity))
+    }, error = function(e) {
+      showNotification(
+        paste("Inisialisasi dashboard gagal:", conditionMessage(e)),
+        type = "error",
+        duration = 10
+      )
+    })
+  }, once = TRUE)
 }
 
 shinyApp(ui, server)
