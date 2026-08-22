@@ -11,6 +11,7 @@ find_repo_root <- function() {
   }
 }
 source(file.path(find_repo_root(), "R", "data_climate.R"), local = FALSE)
+source(file.path(find_repo_root(), "R", "era5_netcdf.R"), local = FALSE)
 
 # ---------------------------------------------------------------------------
 # Timestamp parsing

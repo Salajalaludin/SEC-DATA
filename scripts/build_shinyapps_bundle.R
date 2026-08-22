@@ -19,7 +19,7 @@ stop_if_missing <- function(paths, label) {
   }
 }
 
-copy_tree <- function(source_dir, target_dir) {
+copy_tree <- function(source_dir, target_dir, exclude = character()) {
   stop_if_missing(source_dir, "Direktori sumber")
   dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -33,6 +33,11 @@ copy_tree <- function(source_dir, target_dir) {
   if (length(source_files) == 0) return(invisible(NULL))
 
   relative_files <- substring(source_files, nchar(source_dir) + 2L)
+  keep <- !basename(relative_files) %in% exclude
+  source_files <- source_files[keep]
+  relative_files <- relative_files[keep]
+  if (length(source_files) == 0) return(invisible(NULL))
+
   target_files <- file.path(target_dir, relative_files)
   for (target_dir_path in unique(dirname(target_files))) {
     dir.create(target_dir_path, recursive = TRUE, showWarnings = FALSE)
@@ -46,7 +51,7 @@ dir.create(bundle_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Only generated paths inside deploy_bundle are removed. README.md and
 # .gitignore remain tracked; no repository source or cache is touched.
-generated_dirs <- file.path(bundle_dir, c("R", "modules", "www", "cache"))
+generated_dirs <- file.path(bundle_dir, c("R", "modules", "www", "cache", "rsconnect"))
 generated_files <- c(
   file.path(bundle_dir, "app.R"),
   list.files(bundle_dir, pattern = "^Data komoditas .*\\.xlsx$", full.names = TRUE)
@@ -86,7 +91,13 @@ stop_if_missing(cache_files, "Cache runtime wajib")
 if (!file.copy(file.path(app_dir, "app.R"), file.path(bundle_dir, "app.R"), overwrite = TRUE)) {
   stop("Gagal menyalin app.R.", call. = FALSE)
 }
-copy_tree(file.path(repo_dir, "R"), file.path(bundle_dir, "R"))
+# NetCDF/terra code remains available to local refresh scripts but is not part
+# of the hosted cache-only runtime bundle.
+copy_tree(
+  file.path(repo_dir, "R"),
+  file.path(bundle_dir, "R"),
+  exclude = "era5_netcdf.R"
+)
 copy_tree(file.path(app_dir, "modules"), file.path(bundle_dir, "modules"))
 copy_tree(file.path(app_dir, "www"), file.path(bundle_dir, "www"))
 

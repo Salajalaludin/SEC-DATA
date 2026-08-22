@@ -41,7 +41,9 @@ meng-hardcode hasil ini dan tetap menampilkan kandidat yang dipilih evaluasi akt
 Runtime app memakai konfigurasi evaluasi bounded agar startup tetap responsif;
 angka pada panel preview app bukan pengganti metrik full protocol di atas.
 
-Package R yang dipakai: `shiny`, `ggplot2`, `readxl`, `terra`, `forecast`, dan `xgboost`.
+Package R runtime app yang dipakai: `shiny`, `ggplot2`, `readxl`, `forecast`,
+dan `xgboost`. Package `terra` hanya diperlukan oleh updater/rebuild ERA5
+lokal (`R/era5_netcdf.R`), bukan oleh bundle Shiny cache-only.
 
 Ringkasan metodologi untuk penjelasan:
 
@@ -79,9 +81,10 @@ Arsitektur yang dipakai sekarang:
    `cache/era5_daily_bandung_cilegon.rds`
 4. `app.R` hanya membaca cache terbaru. App tidak lagi mengunduh ERA5 dari CDS saat user membuka dashboard.
 
-Transformasi NetCDF -> harian dipusatkan di **`R/data_climate.R`** (Methodology V2)
-dan dipakai bersama oleh `update_era5_daily.R` dan `app.R` agar tidak ada dua
-implementasi yang menyimpang:
+Transformasi NetCDF -> harian dipusatkan di **`R/data_climate.R`** dan
+**`R/era5_netcdf.R`** (Methodology V2). `update_era5_daily.R` dan
+`scripts/rebuild_era5_cache.R` memuat kedua modul; `app.R` hanya memuat modul
+cache/runtime sehingga deployment tidak membutuhkan native GDAL/terra:
 
 - `valid_time` dipertahankan sebagai POSIXct UTC sampai t2m/d2m/tp diselaraskan
   per timestamp eksak;

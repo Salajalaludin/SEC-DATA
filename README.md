@@ -233,7 +233,8 @@ Then run:
 
 See [deploy_bundle/README.md](deploy_bundle/README.md) for the placeholder
 workflow. Data refresh commits updated static caches separately; redeploy the
-bundle when the hosted app should receive those refreshed caches.
+bundle when the hosted app should receive those refreshed caches. The hosted
+bundle is cache-only and excludes the local ERA5 NetCDF/`terra` updater path.
 
 ## License
 

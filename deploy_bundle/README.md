@@ -16,6 +16,10 @@ The builder creates a self-contained bundle with:
 - commodity workbooks
 - the four runtime cache inputs used by the dashboard
 
+The hosted bundle is cache-only: local ERA5 NetCDF files and the native
+`terra`/GDAL updater dependency are intentionally excluded. ERA5 cache rebuilds
+continue to run locally through `cilegon_komoditas_shiny/update_era5_daily.R`.
+
 Upload requires credentials supplied through the environment. Never place
 tokens, secrets, .Renviron, or .cdsapirc in this directory or in Git.
 
