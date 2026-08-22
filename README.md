@@ -259,16 +259,16 @@ disebut "best" atau "optimal"; rolling-validation hanya memilih kandidat model.
 
 ### XGBoost Klasifikasi
 
-Model klasifikasi menghasilkan probabilitas risiko gagal distribusi. Karena data asli tidak memiliki label kejadian gagal distribusi, label dibuat sebagai proxy dari lonjakan harga ke depan atau kombinasi margin pasar tinggi dan suhu tinggi.
+Model klasifikasi `risk_proxy_v1` menghasilkan **Skor Risiko Tekanan Distribusi** (Distribution Stress Score). Karena data asli tidak memiliki label kejadian distribusi teramati, label proxy dibentuk dari lonjakan harga ke depan atau kombinasi margin pasar tinggi dan suhu tinggi. Skor ini adalah sinyal model-derived berbasis proxy, bukan probabilitas kejadian nyata.
 
 ### SHAP
 
 SHAP dipisahkan menjadi dua jalur:
 
-- SHAP regresi: menjelaskan kontribusi fitur terhadap prediksi harga
-- SHAP klasifikasi: menjelaskan kontribusi fitur terhadap risiko gagal distribusi
+- SHAP regresi: contribution to forecast/model prediction
+- SHAP klasifikasi: contribution to Distribution Stress Score
 
-Summary plot memakai banyak fitur untuk ranking importance. Dependence plot sengaja memakai satu fitur suhu utama agar ambang pengaruh suhu mudah dibaca.
+Summary plot memakai banyak fitur untuk ranking importance. Dependence plot memakai satu fitur suhu untuk membaca asosiasi dengan output model; tidak ada klaim kausal atau threshold suhu yang ditemukan dari plot. Definisi proxy, predictor audit, dan threshold score ada di `docs/RISK_PROXY_DEFINITION.md`.
 
 ## Dashboard
 
@@ -387,7 +387,7 @@ Poin yang biasanya ditanyakan saat presentasi:
   diungkap, lalu masuk ke histori untuk langkah berikutnya.
 - Prediksi operasional H+1 sampai H+3 memakai prakiraan BMKG.
 - Residual SARIMA menjadi target XGBoost residual.
-- SHAP summary memakai banyak fitur, sedangkan dependence plot memakai satu fitur utama untuk membaca ambang efek.
+- SHAP summary memakai banyak fitur, sedangkan dependence plot memakai satu fitur utama untuk membaca asosiasi dengan output model.
 
 ## Status
 
