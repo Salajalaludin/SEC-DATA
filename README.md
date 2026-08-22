@@ -225,5 +225,5 @@ test and smoke checks before publishing.
 
 ## License
 
-No `LICENSE` file is currently present. Choosing a license remains an owner
-decision; this sprint does not add one silently.
+This project is licensed under the GNU Affero General Public License v3.0.
+See [LICENSE](LICENSE) for the complete terms.
