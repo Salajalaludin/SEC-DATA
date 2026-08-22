@@ -39,7 +39,7 @@ if (!nzchar(rscript)) stop("Rscript tidak ditemukan di PATH.", call. = FALSE)
 
 build_output <- system2(
   rscript,
-  c("--vanilla", build_script, repo_dir),
+  c("--vanilla", shQuote(build_script), shQuote(repo_dir)),
   stdout = TRUE,
   stderr = TRUE
 )
