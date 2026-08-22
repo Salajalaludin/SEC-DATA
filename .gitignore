@@ -42,3 +42,11 @@ data_era5_tomat_cilegon_lampung_jabar_nc/
 text
 cilegon_komoditas_shiny/rsconnect/
 
+# Local agent metadata and deployment-only configuration
+.serena/
+AGENTS.md
+SEC_DATA_REFACTOR_SPRINT_PLAN.md
+opencode.json
+uploadshiny.r
+cilegon_komoditas_shiny/.Renviron.example
+
