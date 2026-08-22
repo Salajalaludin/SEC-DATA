@@ -1,0 +1,75 @@
+INFO  2026-08-21 16:41:27,072 serena.cli:health_check:949 - Starting health check for project: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
+INFO  2026-08-21 16:41:27,072 serena.cli:health_check:953 - Creating SerenaAgent with disabled dashboard...
+INFO  2026-08-21 16:41:27,073 serena.util.file_system:_load_gitignore_files:165 - Processing .gitignore file: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\.serena\.gitignore
+INFO  2026-08-21 16:41:27,075 serena.util.file_system:_load_gitignore_files:165 - Processing .gitignore file: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\.gitignore
+INFO  2026-08-21 16:41:27,080 serena.util.file_system:stop:336 - Loading of .gitignore files completed in 0.010 seconds
+INFO  2026-08-21 16:41:27,081 serena.project:stop:336 - Gathering ignore spec for project NEC SATRIA DATA 2026 completed in 0.011 seconds
+INFO  2026-08-21 16:41:27,188 serena.agent:__init__:631 - Will record tool usage statistics with token count estimator: CHAR_COUNT.
+INFO  2026-08-21 16:41:27,212 serena.agent:__init__:635 - Starting Serena server (version=1.7.0, process id=4000, parent process id=27756; language backend=LSP); Python version=3.13.14, platform=Windows-11-10.0.26200-SP0
+INFO  2026-08-21 16:41:27,212 serena.agent:__init__:639 - Configuration file: D:\Users\netra\.serena\serena_config.yml
+INFO  2026-08-21 16:41:27,212 serena.agent:__init__:640 - Available projects: NEC SATRIA DATA 2026, Portofolio Web, notecards
+INFO  2026-08-21 16:41:27,212 serena.agent:__init__:641 - Loaded tools (52): create_text_file, replace_content, replace_in_files, delete_lines, replace_lines, insert_at_line, replace_symbol_body, insert_after_symbol, insert_before_symbol, read_file, list_dir, find_file, search_for_pattern, restart_language_server, get_symbols_overview, find_symbol, find_referencing_symbols, find_implementations, find_declaration, get_diagnostics_for_file, get_diagnostics_for_symbol, rename_symbol, safe_delete_symbol, write_memory, read_memory, list_memories, delete_memory, rename_memory, edit_memory, execute_shell_command, open_dashboard, activate_project, remove_project, get_current_config, onboarding, initial_instructions, serena_info, jet_brains_find_symbol, jet_brains_move, jet_brains_safe_delete, jet_brains_inline_symbol, jet_brains_find_referencing_symbols, jet_brains_get_symbols_overview, jet_brains_type_hierarchy, jet_brains_find_declaration, jet_brains_find_implementations, jet_brains_rename, jet_brains_debug, jet_brains_run_inspections, jet_brains_list_inspections, list_queryable_projects, query_project
+INFO  2026-08-21 16:41:27,212 serena.config.serena_config:determine_language_backend:1452 - Using language backend from global configuration: LSP
+INFO  2026-08-21 16:41:27,228 serena.config.serena_config:start:329 - Loading project instance for RegisteredProject[project_root=C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026, project_config=ProjectConfig[project_name=NEC SATRIA DATA 2026]] starting ...
+INFO  2026-08-21 16:41:27,228 serena.project:__init__:46 - Serena project data folder: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\.serena
+INFO  2026-08-21 16:41:27,229 serena.project:start:329 - Gathering ignore spec for project NEC SATRIA DATA 2026 starting ...
+INFO  2026-08-21 16:41:27,229 serena.config.serena_config:stop:336 - Loading project instance for RegisteredProject[project_root=C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026, project_config=ProjectConfig[project_name=NEC SATRIA DATA 2026]] completed in 0.001 seconds
+INFO  2026-08-21 16:41:27,229 serena.util.file_system:start:329 - Loading of .gitignore files starting ...
+INFO  2026-08-21 16:41:27,229 serena.agent:activate_project_from_path_or_name:1351 - Found registered project 'NEC SATRIA DATA 2026' at path C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
+INFO  2026-08-21 16:41:27,229 serena.util.file_system:_load_gitignore_files:165 - Processing .gitignore file: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\.gitignore
+INFO  2026-08-21 16:41:27,229 serena.agent:_activate_project:1219 - Activating NEC SATRIA DATA 2026 at C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
+INFO  2026-08-21 16:41:27,231 serena.task_executor:issue_task:217 - Scheduling Task-1:init_project_services
+INFO  2026-08-21 16:41:27,231 serena.agent:_update_active_modes:1127 - Active modes (2): editing, interactive
+INFO  2026-08-21 16:41:27,232 serena.util.file_system:_load_gitignore_files:165 - Processing .gitignore file: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\.serena\.gitignore
+INFO  2026-08-21 16:41:27,234 serena.agent:_create_base_toolset:813 - Number of exposed tools: 29
+INFO  2026-08-21 16:41:27,278 serena.agent:__init__:681 - Number of exposed tools: 29. Exposed tools: ['activate_project', 'create_text_file', 'delete_memory', 'edit_memory', 'execute_shell_command', 'find_declaration', 'find_file', 'find_implementations', 'find_referencing_symbols', 'find_symbol', 'get_current_config', 'get_diagnostics_for_file', 'get_symbols_overview', 'initial_instructions', 'insert_after_symbol', 'insert_before_symbol', 'list_dir', 'list_memories', 'onboarding', 'read_file', 'read_memory', 'rename_memory', 'rename_symbol', 'replace_content', 'replace_in_files', 'replace_symbol_body', 'safe_delete_symbol', 'search_for_pattern', 'write_memory']
+INFO  2026-08-21 16:41:27,278 serena.agent:_update_active_tools:1145 - Active tools (29): activate_project, create_text_file, delete_memory, edit_memory, execute_shell_command, find_declaration, find_file, find_implementations, find_referencing_symbols, find_symbol, get_current_config, get_diagnostics_for_file, get_symbols_overview, initial_instructions, insert_after_symbol, insert_before_symbol, list_dir, list_memories, onboarding, read_file, read_memory, rename_memory, rename_symbol, replace_content, replace_in_files, replace_symbol_body, safe_delete_symbol, search_for_pattern, write_memory
+INFO  2026-08-21 16:41:27,279 serena.util.file_system:_load_gitignore_files:165 - Processing .gitignore file: C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\.gitignore
+INFO  2026-08-21 16:41:27,283 serena.util.file_system:stop:336 - Loading of .gitignore files completed in 0.054 seconds
+INFO  2026-08-21 16:41:27,284 serena.project:stop:336 - Gathering ignore spec for project NEC SATRIA DATA 2026 completed in 0.055 seconds
+INFO  2026-08-21 16:41:27,313 serena.task_executor:_process_task_queue:139 - Starting execution of Task-1:init_project_services
+INFO  2026-08-21 16:41:27,313 serena.task_executor:start:329 - Task-1:init_project_services starting ...
+INFO  2026-08-21 16:41:27,314 serena.agent:start:329 - Language server initialization starting ...
+INFO  2026-08-21 16:41:27,314 serena.project:create_language_server_manager:517 - Creating language server manager for C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
+INFO  2026-08-21 16:41:27,314 sensai.util.logging:start:329 - Language server startup (language=r) starting ...
+INFO  2026-08-21 16:41:27,314 serena.ls_manager:create_language_server:58 - Creating language server instance for C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026, language=r.
+INFO  2026-08-21 16:41:27,845 solidlsp.ls:start:3180 - Starting language server r for C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
+INFO  2026-08-21 16:41:27,845 solidlsp.language_servers.r_language_server:_start_server:126 - Starting R Language Server process
+INFO  2026-08-21 16:41:27,845 solidlsp.ls_process:_start:519 - Starting language server process via command: R --vanilla --quiet --slave -e "options(languageserver.debug_mode = FALSE); languageserver::run()"
+INFO  2026-08-21 16:41:27,852 solidlsp.initialize_params:_apply_updates:61 - Workspace folders: ['C:\\2025 coding\\Mini Project\\Agriculture\\NEC SATRIA DATA 2026']
+INFO  2026-08-21 16:41:27,853 solidlsp.language_servers.r_language_server:_start_server:130 - Sending initialize request to R Language Server
+INFO  2026-08-21 16:41:28,182 serena.cli:health_check:956 - SerenaAgent created successfully
+INFO  2026-08-21 16:41:28,184 serena.cli:health_check:959 - Searching for analyzable files...
+INFO  2026-08-21 16:41:28,193 serena.cli:health_check:968 - Found analyzable file: cilegon_komoditas_shiny\app.R
+INFO  2026-08-21 16:41:28,194 serena.cli:health_check:982 - Testing GetSymbolsOverviewTool on file: cilegon_komoditas_shiny\app.R
+INFO  2026-08-21 16:41:28,194 serena.task_executor:issue_task:217 - Scheduling Task-2:<lambda>
+INFO  2026-08-21 16:41:28,821 solidlsp.language_servers.r_language_server:_start_server:140 - R LSP completion provider available
+INFO  2026-08-21 16:41:28,821 solidlsp.language_servers.r_language_server:_start_server:142 - R LSP definition provider available
+INFO  2026-08-21 16:41:28,821 sensai.util.logging:stop:336 - Language server startup (language=r) completed in 1.507 seconds
+INFO  2026-08-21 16:41:28,821 sensai.util.logging:start:329 - Initialising file change notifier (polling for baseline) starting ...
+INFO  2026-08-21 16:41:28,831 sensai.util.logging:stop:336 - Initialising file change notifier (polling for baseline) completed in 0.009 seconds
+INFO  2026-08-21 16:41:28,831 serena.agent:stop:336 - Language server initialization completed in 1.517 seconds
+INFO  2026-08-21 16:41:28,831 serena.task_executor:stop:336 - Task-1:init_project_services completed in 1.518 seconds
+INFO  2026-08-21 16:41:28,831 serena.task_executor:_process_task_queue:139 - Starting execution of Task-2:<lambda>
+INFO  2026-08-21 16:41:28,832 serena.task_executor:start:329 - Task-2:<lambda> starting ...
+INFO  2026-08-21 16:41:30,635 serena.task_executor:stop:336 - Task-2:<lambda> completed in 1.804 seconds
+INFO  2026-08-21 16:41:30,636 serena.cli:health_check:984 - GetSymbolsOverviewTool returned: [{'name': 'app_file_arg', 'kind': 'String'}, {'name': 'app_start_dir', 'kind': 'Field'}, {'name': 'app_renviron', 'kind': 'Field'}, {'name': 'source_repo_module', 'kind': 'Function'}, {'name': 'era5_extent', 'kind': 'Field'}, {'name': 'forecast_horizon', 'kind': 'Number'}, {'name': 'refresh_interval_ms', 'kind': 'Field'}, {'name': 'rupiah', 'kind': 'Function'}, {'name': 'format_tanggal', 'kind': 'Function'}, {'name': 'theme_dark_cilegon', 'kind': 'Function'}, {'name': 'first_existing', 'kind': 'Function'}, {'name': 'valid_climate_frame', 'kind': 'Function'}, {'name': 'read_climate_cache', 'kind': 'Function'}, {'name': 'read_bmkg_cache', 'kind': 'Function'}, {'name': 'blend_climate_sources', 'kind': 'Function'}, {'name': 'read_market_cache', 'kind': 'Function'}, {'name': 'merge_market_sources', 'kind': 'Function'}, {'name': 'commodity_label_from_file', 'kind': 'Function'}, {'name': 'discover_commodity_files', 'kind': 'Function'}, {'name': 'find_col', 'kind': 'Function'}, {'name': 'read_url_csv', 'kind': 'Function'}, {'name': 'read_market_csv', 'kind': 'Function'}, {'name': 'read_climate_csv', 'kind': 'Function'}, {'name': 'find_cdsapirc', 'kind': 'Function'}, {'name': 'normalize_market_name', 'kind': 'Function'}, {'name': 'read_market_data', 'kind': 'Function'}, {'name': 'read_era5_daily', 'kind': 'Function'}, {'name': 'load_project_data', 'kind': 'Function'}, {'name': 'prepare_avg_frame', 'kind': 'Function'}, {'name': 'fit_pipeline_models', 'kind': 'Function'}, {'name': 'predict_future_path', 'kind': 'Function'}, {'name': 'build_live_future_climate', 'kind': 'Function'}, {'name': 'build_pipeline', 'kind': 'Function'}, {'name': 'build_dashboard_state', 'kind': 'Function'}, {'name': 'apply_dashboard_state', 'kind': 'Function'}, {'name': 'initial_choices', 'kind': 'Field'}, {'name': 'initial_tomato', 'kind': 'Field'}, {'name': 'initial_commodity', 'kind': 'Field'}, {'name': 'ui', 'kind': 'Field'}, {'name': 'server', 'kind': 'Function'}, {'name': '---- Evaluation (Methodology V2, Sprint 3)', 'kind': 'String'}]
+INFO  2026-08-21 16:41:30,636 serena.cli:health_check:1004 - Using symbol for testing: source_repo_module (kind: Function)
+INFO  2026-08-21 16:41:30,637 serena.cli:health_check:1007 - Testing FindSymbolTool for symbol: source_repo_module
+INFO  2026-08-21 16:41:30,637 serena.task_executor:issue_task:217 - Scheduling Task-3:<lambda>
+INFO  2026-08-21 16:41:30,736 serena.task_executor:_process_task_queue:139 - Starting execution of Task-3:<lambda>
+INFO  2026-08-21 16:41:30,737 serena.task_executor:start:329 - Task-3:<lambda> starting ...
+INFO  2026-08-21 16:41:30,740 serena.task_executor:stop:336 - Task-3:<lambda> completed in 0.003 seconds
+INFO  2026-08-21 16:41:30,740 serena.cli:health_check:1013 - FindSymbolTool found 1 matches for symbol source_repo_module
+INFO  2026-08-21 16:41:30,741 serena.cli:health_check:1016 - Testing FindReferencingSymbolsTool for symbol: source_repo_module
+INFO  2026-08-21 16:41:30,741 serena.task_executor:issue_task:217 - Scheduling Task-4:<lambda>
+INFO  2026-08-21 16:41:30,841 serena.task_executor:_process_task_queue:139 - Starting execution of Task-4:<lambda>
+INFO  2026-08-21 16:41:30,842 serena.task_executor:start:329 - Task-4:<lambda> starting ...
+INFO  2026-08-21 16:41:30,842 serena.ls_manager:sync_file_system_changes:274 - Polling file system for changes to source files ...
+INFO  2026-08-21 16:41:30,876 serena.ls_manager:sync_file_system_changes:276 - File system polling complete; 0 change events sent to language servers.
+WARNING 2026-08-21 16:41:37,739 solidlsp.ls:request_referencing_symbols:2450 - Could not find containing symbol for cilegon_komoditas_shiny\app.R:28:0. Returning file symbol instead
+WARNING 2026-08-21 16:41:39,167 solidlsp.ls:request_referencing_symbols:2450 - Could not find containing symbol for cilegon_komoditas_shiny\app.R:29:0. Returning file symbol instead
+WARNING 2026-08-21 16:41:40,574 solidlsp.ls:request_referencing_symbols:2450 - Could not find containing symbol for cilegon_komoditas_shiny\app.R:30:0. Returning file symbol instead
+INFO  2026-08-21 16:41:40,578 serena.task_executor:stop:336 - Task-4:<lambda> completed in 9.736 seconds
+INFO  2026-08-21 16:41:40,578 serena.cli:health_check:1021 - FindReferencingSymbolsTool found 3 references for symbol source_repo_module
+INFO  2026-08-21 16:41:40,579 serena.cli:health_check:1029 - Health check completed successfully

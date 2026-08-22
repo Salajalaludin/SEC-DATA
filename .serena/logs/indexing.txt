@@ -1,0 +1,4 @@
+tests\testthat\test-climate-processing.R
+Error processing request textDocument/documentSymbol with params:
+{'textDocument': {'uri': 'file:///C:/2025%20coding/Mini%20Project/Agriculture/NEC%20SATRIA%20DATA%202026/tests/testthat/test-climate-processing.R'}}
+(caused by LanguageServerTerminatedException: Language server stdout read process terminated unexpectedly)
