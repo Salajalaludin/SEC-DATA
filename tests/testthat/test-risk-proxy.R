@@ -67,9 +67,13 @@ test_that("active UI has no legacy probability phrase", {
 
 test_that("risk SHAP uses the proxy classifier and remains distinct from regression SHAP", {
   root <- find_repo_root()
-  app_text <- paste(readLines(file.path(root, "cilegon_komoditas_shiny/app.R"), warn = FALSE), collapse = "\n")
-  expect_match(app_text, "reg_contrib <- as.data.frame\\(predict\\(core\\$models\\$xgb_reg")
-  expect_match(app_text, "cls_contrib <- as.data.frame\\(predict\\(risk_fit\\$model")
-  expect_match(app_text, "contribution to Distribution Stress Score")
-  expect_match(app_text, "contribution to forecast/model prediction")
+  pipeline_text <- paste(readLines(file.path(root, "R/pipeline.R"), warn = FALSE), collapse = "\n")
+  explainability_text <- paste(readLines(file.path(root, "R/explainability.R"), warn = FALSE), collapse = "\n")
+  shap_ui_text <- paste(readLines(file.path(root, "cilegon_komoditas_shiny/modules/mod_shap.R"), warn = FALSE), collapse = "\n")
+
+  expect_match(pipeline_text, "build_shap_artifacts\\(core\\$models\\$xgb_reg, risk_fit\\$model")
+  expect_match(explainability_text, "predict\\(reg_model, predictor_matrix, predcontrib = TRUE\\)")
+  expect_match(explainability_text, "predict\\(risk_model, predictor_matrix, predcontrib = TRUE\\)")
+  expect_match(shap_ui_text, "contribution to Distribution Stress Score")
+  expect_match(shap_ui_text, "contribution to forecast/model prediction")
 })
