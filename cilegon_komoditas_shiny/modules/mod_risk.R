@@ -18,7 +18,11 @@ mod_risk_server <- function(id, state) {
     output$warningBox <- shiny::renderUI({
       snapshot <- state()
       shiny::req(snapshot)
-      risk_3day <- max(snapshot$live_forecast_data$distribution_stress_score, na.rm = TRUE)
+      scores <- as.numeric(snapshot$live_forecast_data$distribution_stress_score)
+      if (!any(is.finite(scores))) {
+        return(shiny::HTML("<p style='color:#ffd573;'>Skor Risiko Tekanan Distribusi belum tersedia untuk forecast ini.</p>"))
+      }
+      risk_3day <- max(scores, na.rm = TRUE)
       status <- map_stress_status(risk_3day, snapshot$stress_thresholds)
       threshold_values <- snapshot$stress_thresholds$values
       band_text <- sprintf(
@@ -28,15 +32,21 @@ mod_risk_server <- function(id, state) {
         100 * threshold_values[["darurat"]],
         100 * threshold_values[["darurat"]]
       )
-      test_mape <- mean(snapshot$test_data$ape, na.rm = TRUE)
+      forecast_sources <- if ("sumber_iklim" %in% names(snapshot$live_forecast_data)) {
+        unique(as.character(snapshot$live_forecast_data$sumber_iklim))
+      } else {
+        "source not recorded"
+      }
+      forecast_sources <- forecast_sources[!is.na(forecast_sources) & nzchar(forecast_sources)]
+      if (length(forecast_sources) == 0) forecast_sources <- "source not recorded"
       shiny::HTML(sprintf(
-        "<div class='status-pill %s'>%s</div><p style='margin-top:12px;color:#f5f2e8;font-weight:700;'>Skor Risiko Tekanan Distribusi tertinggi %.0f/100 pada prediksi H+1 sampai H+3</p><p style='color:#c8c7bc;'>%s Model utama: <b>%s</b>. MAPE final test: <b>%.1f%%</b>. Prediksi 3 hari ke depan memakai prakiraan BMKG. Ini adalah sinyal turunan model berbasis proxy, bukan probabilitas kejadian nyata teramati.</p>",
+        "<div class='status-pill %s'>%s</div><p style='margin-top:12px;color:#f5f2e8;font-weight:700;'>Skor Risiko Tekanan Distribusi tertinggi %.0f/100 pada prediksi H+1 sampai H+3</p><p style='color:#c8c7bc;'>%s Champion validasi: <b>%s</b>. Sumber iklim forecast: <b>%s</b>. Ini adalah sinyal turunan model berbasis proxy, bukan probabilitas kejadian nyata teramati.</p>",
         status,
         status,
         100 * risk_3day,
         band_text,
         snapshot$selected_model,
-        100 * test_mape
+        paste(forecast_sources, collapse = ", ")
       ))
     })
 

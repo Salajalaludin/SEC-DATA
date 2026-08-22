@@ -70,7 +70,7 @@ mod_shap_ui <- function(id) {
       shiny::div("Definisi fitur yang dipakai pada model regresi residual dan klasifikasi risiko", class = "section-subtitle"),
       shiny::div(
         class = "note-grid",
-        shiny::div(class = "note-item", shiny::HTML("<b>suhu_puncak_lag1</b><br>Suhu puncak koridor distribusi pada hari sebelumnya. Dipakai sebagai predictor kondisi suhu dalam output model, bukan bukti efek kausal pada harga atau distribusi.")),
+          shiny::div(class = "note-item", shiny::HTML("<b>suhu_puncak_lag1</b><br>Suhu puncak Cilegon Local Climate pada hari sebelumnya. Dipakai sebagai predictor kondisi suhu dalam output model, bukan bukti efek kausal pada harga atau distribusi.")),
         shiny::div(class = "note-item", shiny::HTML("<b>HEI</b><br>Heat Exposure Index, indeks paparan panas. Referensi 32 derajat C adalah heuristic feature reference, bukan threshold risiko atau temuan kausal.")),
         shiny::div(class = "note-item", shiny::HTML("<b>delta_suhu</b><br>Perubahan suhu puncak dibanding hari sebelumnya. Nilai besar berarti terjadi lonjakan atau penurunan suhu mendadak.")),
         shiny::div(class = "note-item", shiny::HTML("<b>ma7</b><br>Rata-rata bergerak harga tomat 7 hari. Fitur ini mewakili level harga jangka pendek sebelum prediksi dibuat.")),
@@ -102,7 +102,7 @@ mod_shap_server <- function(id, state) {
       ggplot2::ggplot(snapshot$dep_reg, ggplot2::aes(suhu, shap)) +
         ggplot2::geom_point(ggplot2::aes(color = harga), alpha = 0.62, size = 1.7) +
         ggplot2::geom_smooth(color = "#ffb866", linewidth = 1.1, se = FALSE, method = "loess", formula = y ~ x) +
-        ggplot2::scale_color_gradient(low = "#61c9a8", high = "#ffb866", labels = rupiah) +
+        ggplot2::scale_color_gradient(low = "#61c9a8", high = "#ffb866", name = "Harga (Rp)", labels = rupiah) +
         ggplot2::labs(x = "Suhu puncak lag-1 (derajat C)", y = "SHAP contribution to forecast/model prediction") +
         theme_dark_cilegon()
     })

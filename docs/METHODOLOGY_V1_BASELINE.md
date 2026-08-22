@@ -4,13 +4,14 @@
 > **persis seperti yang dikodekan**, sebelum Methodology V2 dimulai.
 >
 > **Metodologi V1 = baseline warisan (legacy).**
-> **Metodologi V2 = pipeline terkoreksi yang sedang dikembangkan.**
+> **Metodologi V2 = pipeline terkoreksi yang aktif.**
 >
 > Dokumen ini TIDAK boleh dibaca sebagai versi ideal dari sistem. Semua angka,
 > rumus, ambang, dan konfigurasi di bawah ini mencerminkan perilaku kode saat
 > pengambilan baseline (commit `d36bfd1`, 2026-08-17). Setiap klaim performa yang
 > tercantum di sini bersifat sementara dan hanya berlaku sebagai baseline sampai
-> refactor metodologi selesai.
+> refactor metodologi selesai. Inventory file di bawah juga merupakan snapshot
+> historis; struktur aktif dijelaskan di `README.md` dan dokumen Methodology V2.
 
 - Tanggal dokumentasi: 2026-08-17
 - Repositori: `Salajalaludin/SEC-DATA`

@@ -66,11 +66,13 @@ bootstrap_snapshot <- build_dashboard_state(initial_commodity, app_start_dir, co
 ui <- fluidPage(
   tags$head(
     tags$title("Dashboard Tomat Cilegon"),
+    tags$meta(name = "theme-color", content = "#1f201e"),
+    tags$meta(name = "color-scheme", content = "dark"),
     tags$link(rel = "stylesheet", type = "text/css", href = "app.css")
   ),
   h1("Dashboard ketahanan pangan Cilegon", class = "app-title"),
   div(
-    "Monitoring suhu dan harga komoditas pangan - koridor Bandung-Cilegon",
+    "Monitoring harga dan Cilegon Local Climate",
     class = "app-subtitle"
   ),
   tabsetPanel(

@@ -58,11 +58,14 @@ fit_pipeline_models <- function(train_avg, risk_training_avg = train_avg) {
 }
 
 predict_future_path <- function(fit_obj, history_avg, future_climate, selected_model_key) {
+  future_cols <- c("tanggal", "suhu_puncak", "kelembaban", "hujan")
+  if ("sumber_iklim" %in% names(future_climate)) future_cols <- c(future_cols, "sumber_iklim")
   future_features <- future_climate[
     order(future_climate$tanggal),
-    c("tanggal", "suhu_puncak", "kelembaban", "hujan"),
+    future_cols,
     drop = FALSE
   ]
+  if (!"sumber_iklim" %in% names(future_features)) future_features$sumber_iklim <- "Unknown"
   horizon <- nrow(future_features)
   if (horizon == 0) return(data.frame())
   sarima_forecast <- as.numeric(forecast::forecast(fit_obj$models$sarima, h = horizon)$mean)
@@ -118,6 +121,7 @@ predict_future_path <- function(fit_obj, history_avg, future_climate, selected_m
     residual_hybrid = future_residual_hybrid,
     selected_prediction = future_selected,
     distribution_stress_score = future_score,
+    sumber_iklim = as.character(future_features$sumber_iklim),
     status = map_stress_status(future_score, fit_obj$stress_thresholds),
     stringsAsFactors = FALSE
   )
@@ -131,6 +135,7 @@ build_live_future_climate <- function(avg, bmkg_forecast, horizon = FORECAST_HOR
       drop = FALSE
     ]
     future <- head(future[order(future$tanggal), ], horizon)
+    if (nrow(future) > 0) future$sumber_iklim <- "BMKG"
     if (nrow(future) >= horizon) return(future)
     if (nrow(future) > 0) {
       extra_n <- horizon - nrow(future)
@@ -139,16 +144,26 @@ build_live_future_climate <- function(avg, bmkg_forecast, horizon = FORECAST_HOR
         tanggal = seq.Date(max(future$tanggal) + 1, by = "day", length.out = extra_n),
         suhu_puncak = rep(tail_row$suhu_puncak, extra_n),
         kelembaban = rep(tail_row$kelembaban, extra_n),
-        hujan = rep(tail_row$hujan, extra_n)
+        hujan = rep(tail_row$hujan, extra_n),
+        sumber_iklim = "BMKG carry-forward",
+        stringsAsFactors = FALSE
       )
       return(rbind(future, extra))
     }
+  }
+  fallback_source <- if ("sumber_iklim" %in% names(avg)) {
+    source <- tail(as.character(avg$sumber_iklim), 1)
+    if (is.na(source) || !nzchar(source)) "ERA5" else source
+  } else {
+    "ERA5"
   }
   data.frame(
     tanggal = seq.Date(max(avg$tanggal) + 1, by = "day", length.out = horizon),
     suhu_puncak = rep(tail(avg$suhu_puncak, 1), horizon),
     kelembaban = rep(tail(avg$kelembaban, 1), horizon),
-    hujan = rep(tail(avg$hujan, 1), horizon)
+    hujan = rep(tail(avg$hujan, 1), horizon),
+    sumber_iklim = paste(fallback_source, "carry-forward"),
+    stringsAsFactors = FALSE
   )
 }
 
@@ -195,6 +210,12 @@ build_pipeline <- function(df, bmkg_forecast = NULL, forecast_horizon = FORECAST
   live_input <- build_live_future_climate(avg, bmkg_forecast, forecast_horizon)
   live_forecast <- predict_future_path(live_fit, avg, live_input, selected_model_key)
   last_actual_score <- tail(live_fit$model_frame$distribution_stress_score, 1)
+  last_climate_source <- if ("sumber_iklim" %in% names(avg)) {
+    source <- tail(as.character(avg$sumber_iklim), 1)
+    if (is.na(source) || !nzchar(source)) "Unknown" else source
+  } else {
+    "Unknown"
+  }
   forecast_data <- data.frame(
     horizon = factor(
       c("Aktual terakhir", paste0("H+", seq_len(nrow(live_forecast)))),
@@ -205,6 +226,7 @@ build_pipeline <- function(df, bmkg_forecast = NULL, forecast_horizon = FORECAST
     tanggal = c(tail(avg$tanggal, 1), live_forecast$tanggal),
     komponen = c("Observasi", rep("Forecast", nrow(live_forecast))),
     model_prediksi = c("Aktual", rep(selected_model, nrow(live_forecast))),
+    sumber_iklim = c(last_climate_source, live_forecast$sumber_iklim),
     distribution_stress_score = c(last_actual_score, live_forecast$distribution_stress_score),
     status = c(
       map_stress_status(last_actual_score, live_fit$stress_thresholds),

@@ -5,10 +5,7 @@ mod_forecast_ui <- function(id) {
     shiny::div(
       class = "card",
       shiny::div("Panel prediksi", class = "section-title"),
-      shiny::div(
-        "Forecast live H+1 sampai H+3 memakai harga historis terbaru dan BMKG forecast",
-        class = "section-subtitle"
-      ),
+      shiny::uiOutput(ns("forecastSubtitle")),
       shiny::plotOutput(ns("forecastPlot"), height = 265)
     )
   )
@@ -31,7 +28,7 @@ mod_forecast_flow_ui <- function(id) {
       shiny::div(
         class = "flow-grid",
         shiny::div(class = "flow-box price", shiny::strong("Tahap 1 - SAGON Cilegon"), "Harga tomat harian dari tiga pasar."),
-        shiny::div(class = "flow-box climate", shiny::strong("Tahap 1 - ERA5 Reanalysis"), "Suhu, kelembaban, dan hujan koridor Bandung-Cilegon."),
+        shiny::div(class = "flow-box climate", shiny::strong("Tahap 1 - ERA5 Reanalysis"), "Suhu, kelembaban, dan hujan Cilegon Local Climate."),
         shiny::div(class = "flow-box", shiny::strong("Tahap 2 - Pra-pemrosesan"), "Cleaning dan merge berdasarkan tanggal yang sama."),
         shiny::uiOutput(ns("stationarityStep")),
         shiny::uiOutput(ns("sarimaStep")),
@@ -92,6 +89,28 @@ mod_forecast_flow_ui <- function(id) {
 
 mod_forecast_server <- function(id, state) {
   shiny::moduleServer(id, function(input, output, session) {
+    output$forecastSubtitle <- shiny::renderUI({
+      snapshot <- state()
+      shiny::req(snapshot)
+      sources <- if ("sumber_iklim" %in% names(snapshot$forecast_data)) {
+        unique(as.character(snapshot$forecast_data$sumber_iklim[snapshot$forecast_data$komponen == "Forecast"]))
+      } else {
+        "source not recorded"
+      }
+      sources <- sources[!is.na(sources) & nzchar(sources)]
+      if (length(sources) == 0) sources <- "source not recorded"
+      shiny::div(
+        paste(
+          "Forecast live H+1 sampai H+3 memakai champion",
+          snapshot$selected_model,
+          "dan sumber iklim",
+          paste(sources, collapse = ", "),
+          "."
+        ),
+        class = "section-subtitle"
+      )
+    })
+
     output$stationarityStep <- shiny::renderUI({
       snapshot <- state()
       shiny::req(snapshot)
@@ -138,7 +157,7 @@ mod_forecast_server <- function(id, state) {
           labels = rupiah,
           limits = c(0, max(snapshot$forecast_data$harga, na.rm = TRUE) * 1.18)
         ) +
-        ggplot2::labs(x = NULL, y = NULL, fill = NULL) +
+        ggplot2::labs(x = "Horizon", y = "Harga (Rp)", fill = NULL) +
         theme_dark_cilegon() +
         ggplot2::theme(legend.position = "bottom")
     })
@@ -149,7 +168,7 @@ mod_forecast_server <- function(id, state) {
       ggplot2::ggplot(tail(snapshot$pipeline_data, 45), ggplot2::aes(tanggal, residual)) +
         ggplot2::geom_hline(yintercept = 0, color = "#8a8c84") +
         ggplot2::geom_col(fill = "#b2a7ff", alpha = 0.82, width = 0.8) +
-        ggplot2::labs(x = NULL, y = "epsilon") +
+        ggplot2::labs(x = "Tanggal", y = "Residual (Rp)") +
         theme_dark_cilegon()
     })
 
@@ -173,7 +192,7 @@ mod_forecast_server <- function(id, state) {
           "Aktual test" = "#61c9a8"
         )) +
         ggplot2::scale_y_continuous(labels = rupiah) +
-        ggplot2::labs(x = NULL, y = "Harga") +
+        ggplot2::labs(x = "Tanggal", y = "Harga (Rp)") +
         theme_dark_cilegon()
     })
   })
