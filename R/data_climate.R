@@ -296,3 +296,114 @@ validate_era5_daily <- function(daily) {
   findings$mean_hujan <- mean(daily$hujan, na.rm = TRUE)
   findings
 }
+
+valid_climate_frame <- function(x) {
+  is.data.frame(x) &&
+    nrow(x) > 0 &&
+    all(c("tanggal", "suhu_puncak", "kelembaban", "hujan") %in% names(x)) &&
+    any(complete.cases(x[, c("tanggal", "suhu_puncak", "kelembaban", "hujan")]))
+}
+
+read_climate_cache <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  obj <- tryCatch(readRDS(path), error = function(e) NULL)
+  if (is.null(obj)) return(NULL)
+  data <- if (is.list(obj) && !is.null(obj$data)) obj$data else obj
+  if (valid_climate_frame(data)) data else NULL
+}
+
+read_bmkg_cache <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  obj <- tryCatch(readRDS(path), error = function(e) NULL)
+  if (is.null(obj)) return(NULL)
+  data <- if (is.list(obj) && !is.null(obj$data)) obj$data else obj
+  need <- c("tanggal", "suhu_puncak", "kelembaban", "hujan")
+  if (!is.data.frame(data) || !all(need %in% names(data))) return(NULL)
+  data$tanggal <- as.Date(data$tanggal)
+  data$suhu_puncak <- as.numeric(data$suhu_puncak)
+  data$kelembaban <- as.numeric(data$kelembaban)
+  data$hujan <- as.numeric(data$hujan)
+  data <- data[!is.na(data$tanggal) & !is.na(data$suhu_puncak), , drop = FALSE]
+  if (nrow(data) == 0) return(NULL)
+  data[order(data$tanggal), ]
+}
+
+blend_climate_sources <- function(climate_hist, bmkg_forecast, market_dates) {
+  market_dates <- sort(unique(as.Date(market_dates)))
+  if (length(market_dates) == 0) return(climate_hist)
+
+  hist <- climate_hist
+  hist$sumber_iklim <- "ERA5"
+  combined <- hist
+
+  if (is.data.frame(bmkg_forecast) && nrow(bmkg_forecast) > 0) {
+    bmkg <- bmkg_forecast[, c("tanggal", "suhu_puncak", "kelembaban", "hujan"), drop = FALSE]
+    bmkg$sumber_iklim <- "BMKG"
+    combined <- rbind(combined, bmkg)
+  }
+
+  combined <- combined[order(combined$tanggal), ]
+  combined <- combined[!duplicated(combined$tanggal, fromLast = TRUE), ]
+
+  latest_hist <- if (is.data.frame(hist) && nrow(hist) > 0) max(hist$tanggal, na.rm = TRUE) else as.Date(NA)
+  first_bmkg <- if (is.data.frame(bmkg_forecast) && nrow(bmkg_forecast) > 0) min(bmkg_forecast$tanggal, na.rm = TRUE) else as.Date(NA)
+  bridge_end <- min(
+    max(market_dates, na.rm = TRUE),
+    if (is.na(first_bmkg)) max(market_dates, na.rm = TRUE) else first_bmkg - 1
+  )
+
+  if (!is.na(latest_hist) && latest_hist < bridge_end) {
+    bridge_dates <- seq.Date(latest_hist + 1, bridge_end, by = "day")
+    if (length(bridge_dates) > 0) {
+      last_row <- hist[hist$tanggal == latest_hist, c("suhu_puncak", "kelembaban", "hujan"), drop = FALSE][1, ]
+      bridge <- data.frame(
+        tanggal = bridge_dates,
+        suhu_puncak = rep(last_row$suhu_puncak, length(bridge_dates)),
+        kelembaban = rep(last_row$kelembaban, length(bridge_dates)),
+        hujan = rep(last_row$hujan, length(bridge_dates)),
+        sumber_iklim = "Bridge",
+        stringsAsFactors = FALSE
+      )
+      combined <- rbind(combined, bridge)
+      combined <- combined[order(combined$tanggal), ]
+      combined <- combined[!duplicated(combined$tanggal, fromLast = TRUE), ]
+    }
+  }
+
+  needed_dates <- market_dates[market_dates %in% combined$tanggal]
+  combined <- combined[combined$tanggal %in% needed_dates, , drop = FALSE]
+  combined[order(combined$tanggal), ]
+}
+
+read_era5_daily <- function(dir_path, start_date, end_date, cache_path,
+                            extent = era5_config()$extent) {
+  cache_key <- paste(
+    start_date,
+    end_date,
+    normalizePath(dir_path, winslash = "/", mustWork = FALSE),
+    as.vector(extent)
+  )
+  if (file.exists(cache_path)) {
+    cache <- readRDS(cache_path)
+    if (identical(cache$key, cache_key) && valid_climate_frame(cache$data)) return(cache$data)
+  }
+
+  hourly <- read_era5_hourly_range(dir_path, start_date, end_date, extent)
+  if (!is.data.frame(hourly) || nrow(hourly) == 0) {
+    climate <- data.frame(
+      tanggal = as.Date(character()),
+      suhu_puncak = numeric(),
+      kelembaban = numeric(),
+      hujan = numeric()
+    )
+  } else {
+    climate <- aggregate_era5_daily(hourly)
+    climate <- climate[climate$tanggal >= start_date & climate$tanggal <= end_date, , drop = FALSE]
+  }
+
+  if (valid_climate_frame(climate)) {
+    dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
+    saveRDS(list(key = cache_key, data = climate), cache_path)
+  }
+  climate
+}

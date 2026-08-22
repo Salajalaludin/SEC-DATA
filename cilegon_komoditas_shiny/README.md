@@ -52,6 +52,21 @@ Ringkasan metodologi untuk penjelasan:
 - XGBoost memakai konfigurasi tetap: `max_depth = 3`, `eta = 0.05`, `nrounds = 120`, `subsample = 0.9`, dan `colsample_bytree = 0.9`. Tidak ada pencarian hyperparameter atau early stopping; konfigurasi ini tidak disebut best/optimal.
 - SHAP summary plot memakai banyak fitur untuk ranking importance. SHAP regresi dibaca sebagai contribution to forecast/model prediction, sedangkan SHAP risk sebagai contribution to Distribution Stress Score; keduanya associational, bukan causal. Dependence plot suhu tidak menetapkan threshold suhu.
 
+## Arsitektur Shiny (Sprint 6)
+
+`app.R` hanya melakukan bootstrap/source, menyusun UI, menyusun server, dan memanggil `shinyApp()`. Logic data/model yang dapat dipanggil tanpa Shiny berada di `R/`: konfigurasi (`config.R`), utility (`utils.R`), market/cache (`data_market.R`), climate (`data_climate.R`), feature/model/evaluation yang sudah ada, SHAP (`explainability.R`), serta orchestration dan state builder (`pipeline.R`).
+
+Lima section besar memakai module di `cilegon_komoditas_shiny/modules/`: monitoring, forecast, risk, evaluation, dan SHAP. Setiap browser session memiliki satu `reactiveVal` berisi state dashboard lengkap. Refresh commodity/manual/otomatis membangun satu state baru, lalu mengganti state session hanya setelah build sukses; session lain dan state valid sebelumnya tidak ditimpa.
+
+Boundary cache tetap ringan:
+
+- raw market, ERA5 harian, dan BMKG forecast dibaca dari cache RDS yang sudah ada;
+- processed features hidup di memory state session;
+- fitted model, evaluation, risk, dan SHAP artifacts hidup di memory state session;
+- metadata state mencatat `generated_at`, commodity, date range, Methodology V2, model identifier, dan timestamp cache bila tersedia.
+
+Tidak ada database, background job, atau perubahan formula/statistical selection pada Sprint 6.
+
 ## Arsitektur update ERA5
 
 Arsitektur yang dipakai sekarang:
