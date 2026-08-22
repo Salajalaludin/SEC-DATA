@@ -199,13 +199,18 @@ load_project_data <- function(commodity = NULL, app_dir, config = dashboard_conf
     market_base <- read_market_data(market_path, commodity)
   }
   market_live <- NULL
-  if (nzchar(market_url)) market_live <- read_market_csv(market_url)
+  market_live_from_url <- FALSE
+  if (nzchar(market_url)) {
+    market_live <- tryCatch(read_market_csv(market_url), error = function(e) NULL)
+    market_live_from_url <- is.data.frame(market_live) && nrow(market_live) > 0
+  }
   if (is.null(market_live)) market_live <- read_market_cache(market_cache_path)
   if ("komoditas" %in% names(market_live)) {
     keep <- tolower(trimws(market_live$komoditas)) == tolower(trimws(commodity)) |
       is.na(market_live$komoditas) |
       !nzchar(trimws(market_live$komoditas))
     market_live <- market_live[keep, , drop = FALSE]
+    market_live_from_url <- market_live_from_url && nrow(market_live) > 0
   }
   market <- merge_market_sources(market_base, market_live, commodity)
   if (is.null(market) || !is.data.frame(market) || nrow(market) == 0) {
@@ -225,7 +230,12 @@ load_project_data <- function(commodity = NULL, app_dir, config = dashboard_conf
   start_date <- min(market$tanggal, na.rm = TRUE)
   end_date <- max(market$tanggal, na.rm = TRUE)
 
-  climate <- if (nzchar(climate_url)) read_climate_csv(climate_url) else NULL
+  climate_from_url <- FALSE
+  climate <- NULL
+  if (nzchar(climate_url)) {
+    climate <- tryCatch(read_climate_csv(climate_url), error = function(e) NULL)
+    climate_from_url <- valid_climate_frame(climate)
+  }
   if (!valid_climate_frame(climate)) climate <- read_climate_cache(cache_path)
   if (!valid_climate_frame(climate)) climate <- read_climate_cache(fallback_cache_path)
 
@@ -280,6 +290,26 @@ load_project_data <- function(commodity = NULL, app_dir, config = dashboard_conf
   merged <- merge(market, climate_blended, by = "tanggal", all.x = TRUE)
   merged <- merged[order(merged$tanggal, merged$pasar), ]
 
+  market_source <- if (market_live_from_url) {
+    "Realtime CSV/API harga"
+  } else if (is.data.frame(market_live) && nrow(market_live) > 0) {
+    "Cache harga SAGON"
+  } else {
+    "File Excel lokal"
+  }
+  climate_source <- if (climate_from_url) {
+    "Realtime CSV/API iklim"
+  } else if (valid_climate_frame(climate)) {
+    "ERA5 historis"
+  } else {
+    "Iklim unavailable"
+  }
+  forecast_source <- if (is.data.frame(bmkg_forecast) && nrow(bmkg_forecast) > 0) {
+    "BMKG forecast"
+  } else {
+    "BMKG unavailable"
+  }
+
   list(
     market = market,
     climate = climate,
@@ -288,17 +318,7 @@ load_project_data <- function(commodity = NULL, app_dir, config = dashboard_conf
     merged = merged,
     commodity = commodity,
     commodity_choices = names(commodity_files),
-    source_label = if (nzchar(market_url) || nzchar(climate_url)) {
-      "Realtime CSV/API"
-    } else if (file.exists(market_cache_path) && file.exists(bmkg_cache_path)) {
-      "Cache harga SAGON + ERA5 historis + BMKG forecast"
-    } else if (file.exists(market_cache_path)) {
-      "Cache harga SAGON + cache ERA5 harian"
-    } else if (!is.null(cdsapirc)) {
-      "Harga lokal + cache ERA5 harian"
-    } else {
-      "File lokal/cache"
-    },
+    source_label = paste(market_source, climate_source, forecast_source, sep = " + "),
     cache_metadata = list(
       raw_market = list(path = market_cache_path, generated_at = if (file.exists(market_cache_path)) file.info(market_cache_path)$mtime else as.POSIXct(NA)),
       climate = list(path = cache_path, generated_at = if (file.exists(cache_path)) file.info(cache_path)$mtime else as.POSIXct(NA)),

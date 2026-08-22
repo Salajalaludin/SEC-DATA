@@ -1,7 +1,8 @@
 # EVALUATION PROTOCOL — Methodology V2 (Sprint 4)
 
-Status: **applicable as of Sprint 4**. Supersedes the legacy "80/20 test + MAPE bias grid"
-evaluation and pseudo-hybrid recorded in `docs/METHODOLOGY_V1_BASELINE.md`.
+Status: **active Methodology V2**. Supersedes the legacy "80/20 test + MAPE bias
+grid" evaluation and pseudo-hybrid recorded in
+`docs/METHODOLOGY_V1_BASELINE.md`.
 
 ## 1. Purpose
 
@@ -152,23 +153,35 @@ Rscript --vanilla scripts/run_evaluation.R Tomat --full
 
 ## 11. Latest verified Tomat result
 
-Full protocol completed successfully on 2026-08-20 with 12 validation folds
-(84 validation rows) and an untouched 125-row final test ending 2026-06-22.
-The frozen champion is **Naive**, selected only from validation WAPE.
+Full protocol completed successfully on 2026-08-22 with 12 validation folds
+(84 validation rows) and an untouched 125-row final test ending 2026-06-28.
+The development period ran from 2023-01-02 to 2026-02-12; the final test ran
+from 2026-02-13 to 2026-06-28. The frozen champion is **Naive**, selected only
+from validation WAPE.
 
 | Candidate | Validation MAE | Validation RMSE | Validation WAPE | Validation MAPE |
 |---|---:|---:|---:|---:|
-| **Naive (selected)** | **416.6667** | **613.9903** | **3.801593%** | **3.782219%** |
-| Seasonal Naive 7 | 928.5714 | 1180.7540 | 8.472122% | 8.484902% |
-| MA7 | 615.0794 | 792.2834 | 5.611875% | 5.589030% |
-| SARIMA | 490.0816 | 657.6158 | 4.471418% | 4.455828% |
-| XGBoost Direct | 439.3480 | 597.6609 | 4.008534% | 3.980597% |
-| SARIMA + XGBoost Residual | 464.6712 | 650.9018 | 4.239578% | 4.199446% |
+| **Naive (selected)** | **416.6667** | **616.1409** | **3.816794%** | **3.794374%** |
+| Seasonal Naive 7 | 972.2222 | 1229.5954 | 8.905852% | 8.899134% |
+| MA7 | 626.4172 | 809.7405 | 5.738173% | 5.714593% |
+| SARIMA | 488.9909 | 665.8013 | 4.479306% | 4.465642% |
+| XGBoost Direct | 436.3841 | 594.2438 | 3.997411% | 3.971717% |
+| SARIMA + XGBoost Residual | 463.0474 | 659.3877 | 4.241656% | 4.202082% |
 
-Final-test confirmation for the frozen Naive champion: MAE 629.3333, RMSE
-895.4204, WAPE 4.884106%, and MAPE 4.869648%. These final-test values did not
-participate in selection. The dashboard remains data-driven and does not
-hardcode Naive; a later successful evaluation may select a different candidate.
+Final-test metrics for all candidates are:
+
+| Candidate | MAE | RMSE | WAPE | MAPE |
+|---|---:|---:|---:|---:|
+| **Naive (selected)** | **621.3307** | **889.9398** | **4.790277%** | **4.788751%** |
+| Seasonal Naive 7 | 1280.0000 | 1654.0837 | 9.868425% | 9.971712% |
+| MA7 | 872.7550 | 1107.7320 | 6.728686% | 6.819313% |
+| SARIMA | 720.7342 | 916.0112 | 5.556649% | 5.623346% |
+| XGBoost Direct | 735.2993 | 924.7082 | 5.668942% | 5.727808% |
+| SARIMA + XGBoost Residual | 727.8603 | 930.6686 | 5.611590% | 5.673336% |
+
+These final-test values did not participate in selection. The dashboard remains
+data-driven and does not hard-code Naive; a later successful evaluation may
+select a different candidate.
 
 ## 12. Artifacts
 

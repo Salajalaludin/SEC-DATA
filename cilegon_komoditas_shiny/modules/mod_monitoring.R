@@ -6,7 +6,7 @@ mod_monitoring_ui <- function(id, commodity_choices, selected_commodity) {
       shiny::uiOutput(ns("refreshStatus")),
       shiny::selectInput(
         ns("commoditySelect"),
-        NULL,
+        "Komoditas",
         choices = commodity_choices,
         selected = selected_commodity,
         width = "260px"
@@ -70,6 +70,7 @@ mod_monitoring_server <- function(id, state, refresh_dashboard, refresh_interval
         class = "refresh-info",
         shiny::div(shiny::strong("Komoditas: "), snapshot$commodity),
         shiny::div(shiny::strong("Sumber data: "), snapshot$source_label),
+        shiny::div(shiny::strong("Data pasar sampai: "), format_tanggal(max(snapshot$raw_data$tanggal, na.rm = TRUE))),
         shiny::div(shiny::strong("ERA5 terakhir: "), format_tanggal(snapshot$climate_latest)),
         shiny::div(
           shiny::strong("Iklim gabungan sampai: "),
@@ -81,7 +82,7 @@ mod_monitoring_server <- function(id, state, refresh_dashboard, refresh_interval
         ),
         shiny::div(shiny::strong("Model prediksi utama: "), snapshot$selected_model),
         shiny::div(
-          "Update terakhir: ", format(snapshot$last_refresh_time, "%d %b %Y %H:%M:%S"),
+          "Sesi dimuat: ", format(snapshot$last_refresh_time, "%d %b %Y %H:%M:%S"),
           " | Auto-refresh tiap ", round(refresh_interval_ms / 60000, 1), " menit"
         )
       )
@@ -104,7 +105,7 @@ mod_monitoring_server <- function(id, state, refresh_dashboard, refresh_interval
       snapshot <- state()
       shiny::req(snapshot)
       shiny::div(
-        shiny::div("Suhu puncak koridor", class = "metric-label"),
+        shiny::div("Suhu puncak Cilegon", class = "metric-label"),
         shiny::div(sprintf("%.1f derajat C", snapshot$current$suhu_puncak), class = "metric-value"),
         shiny::div(
           paste0(
@@ -177,8 +178,12 @@ mod_monitoring_server <- function(id, state, refresh_dashboard, refresh_interval
           "Suhu puncak" = "#ff7043"
         )) +
         ggplot2::scale_fill_manual(values = c("Rentang 3 pasar" = "#61c9a8")) +
-        ggplot2::scale_shape_manual(values = c("ERA5" = 16, "Bridge" = 15, "BMKG" = 17), drop = FALSE) +
-        ggplot2::labs(x = NULL, y = paste("Harga", snapshot$commodity), color = NULL, fill = NULL, shape = "Sumber iklim") +
+        ggplot2::scale_shape_manual(values = c(
+          "ERA5" = 16, "Bridge" = 15, "BMKG" = 17,
+          "ERA5 carry-forward" = 15, "Bridge carry-forward" = 15,
+          "BMKG carry-forward" = 15
+        ), drop = FALSE) +
+        ggplot2::labs(x = "Tanggal", y = paste("Harga", snapshot$commodity, "(Rp)"), color = NULL, fill = NULL, shape = "Sumber iklim") +
         theme_dark_cilegon() +
         ggplot2::theme(legend.position = "bottom")
     })

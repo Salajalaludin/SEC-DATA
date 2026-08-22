@@ -6,8 +6,8 @@ mod_evaluation_ui <- function(id) {
         6,
         shiny::div(
           class = "card",
-          shiny::div("Final test (untouched)", class = "section-title"),
-          shiny::div("Blok waktu terbaru yang tidak dipakai untuk tuning/kalibrasi/pemilihan; dievaluasi satu kali dengan refit model di tiap origin", class = "section-subtitle"),
+          shiny::div("In-app final test preview (bounded)", class = "section-title"),
+          shiny::div("Blok terbaru tetap untouched, tetapi app memakai eval_config() bounded defaults (2 fold, minimum 14 hari). Canonical full-protocol metrics ada di docs/EVALUATION_PROTOCOL.md.", class = "section-subtitle"),
           shiny::tableOutput(ns("testMetrics"))
         )
       ),
@@ -23,8 +23,8 @@ mod_evaluation_ui <- function(id) {
     ),
     shiny::div(
       class = "card",
-      shiny::div("Error final test per model", class = "section-title"),
-      shiny::div("Absolute percentage error per tanggal pada final test untuk seluruh kandidat dengan informasi yang sama per origin", class = "section-subtitle"),
+      shiny::div("In-app final-test APE per model", class = "section-title"),
+      shiny::div("Absolute percentage error per tanggal untuk preview bounded app; full-protocol artifacts tetap menjadi rujukan metrik final", class = "section-subtitle"),
       shiny::plotOutput(ns("rollingTestPlot"), height = 300)
     ),
     shiny::div(
@@ -66,6 +66,10 @@ mod_evaluation_server <- function(id, state) {
       shown$RMSE <- rupiah(shown$RMSE)
       shown$WAPE <- sprintf("%.2f%%", 100 * shown$WAPE)
       shown$MAPE <- sprintf("%.2f%%", 100 * shown$MAPE)
+      names(shown)[names(shown) == "MAE"] <- "MAE (Rp)"
+      names(shown)[names(shown) == "RMSE"] <- "RMSE (Rp)"
+      names(shown)[names(shown) == "WAPE"] <- "WAPE (%)"
+      names(shown)[names(shown) == "MAPE"] <- "MAPE (%)"
       shown
     }, striped = FALSE, bordered = FALSE, spacing = "s")
 
@@ -79,6 +83,10 @@ mod_evaluation_server <- function(id, state) {
       shown$RMSE <- rupiah(shown$RMSE)
       shown$WAPE <- sprintf("%.2f%%", 100 * shown$WAPE)
       shown$MAPE <- sprintf("%.2f%%", 100 * shown$MAPE)
+      names(shown)[names(shown) == "MAE"] <- "MAE (Rp)"
+      names(shown)[names(shown) == "RMSE"] <- "RMSE (Rp)"
+      names(shown)[names(shown) == "WAPE"] <- "WAPE (%)"
+      names(shown)[names(shown) == "MAPE"] <- "MAPE (%)"
       shown
     }, striped = FALSE, bordered = FALSE, spacing = "s")
 
@@ -96,7 +104,7 @@ mod_evaluation_server <- function(id, state) {
           "XGBoost Direct" = "#ffd0a0",
           "SARIMA + XGBoost Residual" = "#f5a623"
         )) +
-        ggplot2::labs(x = NULL, y = "APE (%)") +
+        ggplot2::labs(title = "In-app final-test APE (bounded)", x = "Tanggal", y = "APE (%)", color = NULL) +
         theme_dark_cilegon()
     })
 

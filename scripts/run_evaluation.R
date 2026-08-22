@@ -16,6 +16,15 @@ want_all <- any(tolower(args) == "--all")
 use_full <- if (any(tolower(args) == "--full")) TRUE else if (any(tolower(args) == "--bounded")) FALSE else TRUE
 commodity_arg <- args[!tolower(args) %in% c("--all", "--full", "--bounded")]
 
+# `--vanilla` skips the project profile, so add the restored renv library when
+# it exists. This keeps the documented command runnable on a clean checkout.
+project_libs <- c(
+  Sys.glob(file.path("renv", "library", "*", "R-*", "*")),
+  Sys.glob(file.path("renv", "library", "R-*", "*"))
+)
+project_libs <- project_libs[dir.exists(project_libs)]
+if (length(project_libs) > 0) .libPaths(unique(c(project_libs, .libPaths())))
+
 # Sourcing app.R loads the shared data-loading helpers (load_project_data,
 # prepare_avg_frame) and the repository modules (R/*.R). It also builds the
 # default dashboard state once; that is accepted overhead for this script.
@@ -25,9 +34,11 @@ suppressPackageStartupMessages({
 })
 source("cilegon_komoditas_shiny/app.R", local = FALSE)
 
+app_dir <- "cilegon_komoditas_shiny"
+
 run_one <- function(commodity, cfg) {
   cat("\n==== Evaluation for:", commodity, "====\n")
-  pd <- load_project_data(commodity)
+  pd <- load_project_data(commodity, app_dir)
   avg <- prepare_avg_frame(pd$merged)
   avg <- avg[order(avg$tanggal), ]
   ev <- evaluate_pipeline(avg, cfg)
@@ -49,7 +60,7 @@ cfg <- if (use_full) eval_config_full() else eval_config()
 cat("Evaluation config:", paste(names(cfg), unlist(cfg), sep = "=", collapse = ", "), "\n")
 cat("mode:", if (use_full) "FULL protocol" else "bounded\n")
 
-commodities <- if (want_all) names(load_project_data(NULL)$commodity_choices) else {
+commodities <- if (want_all) load_project_data(NULL, app_dir)$commodity_choices else {
   if (length(commodity_arg) > 0) commodity_arg else "Tomat"
 }
 

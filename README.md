@@ -1,427 +1,229 @@
-# SEC-DATA: Dashboard Komoditas Pangan Cilegon
+# SEC-DATA
 
-Repositori ini berisi dashboard R Shiny untuk monitoring harga komoditas pangan Kota Cilegon, prediksi harga 3 hari ke depan, dan early warning risiko distribusi berbasis suhu. Sistem menggabungkan harga pasar SAGON, data iklim historis ERA5, prakiraan cuaca BMKG, kandidat SARIMA/XGBoost, dan interpretasi SHAP.
+SEC-DATA is a research prototype and data-science portfolio project for
+monitoring food-commodity prices in Kota Cilegon, forecasting prices for H+1 to
+H+3, and surfacing a model-derived distribution-stress signal.
 
-## Status Metodologi
+## Project Overview
 
-Repositori sedang menjalani validasi **Methodology V2** (pipeline terkoreksi). Seluruh angka performa model warisan (MAE, RMSE, MAPE, SHAP, risk score) hanya berlaku sebagai **baseline** dari Methodology V1 sampai refactor metodologi selesai. Rekaman baseline saat ini tersedia di:
+The dashboard combines market observations, ERA5 historical climate, and BMKG
+forecast weather in one reproducible R Shiny application. It is intended for
+research communication and operational exploration, not as a production
+probability-of-failure system.
 
-```text
-docs/METHODOLOGY_V1_BASELINE.md
-```
+## Problem / Objective
 
-Metodologi V1 = baseline warisan; Metodologi V2 = pipeline terkoreksi yang sedang dikembangkan.
+Price changes and local heat conditions can complicate short-horizon market
+monitoring. SEC-DATA provides a transparent workflow that can be inspected,
+re-run, and challenged: data refresh, feature construction, time-ordered
+evaluation, live forecast, proxy risk score, and SHAP explanations are kept
+separate.
 
-Folder utama aplikasi:
+## Key Outputs
 
-```text
-cilegon_komoditas_shiny/
-```
+- three-market price monitoring with local climate context;
+- a dynamic H+1/H+2/H+3 price forecast per commodity;
+- final-test and rolling-origin candidate-model comparisons;
+- `Skor Risiko Tekanan Distribusi` / `Distribution Stress Score` on a 0–100
+  display scale;
+- SHAP contribution plots for the forecast and proxy-score models.
 
-## Isi Repositori
+## Data Sources
 
-```text
-.
-├─ .github/workflows/update-data.yml
-├─ cilegon_komoditas_shiny/
-│  ├─ app.R
-│  ├─ README.md
-│  ├─ update_sagon_daily.R
-│  ├─ update_bmkg_forecast.R
-│  ├─ update_era5_daily.R
-│  ├─ fetch_era5_cds.py
-│  ├─ Data komoditas *.xlsx
-│  └─ cache/*.rds
-├─ Data Pasar Kota Cilegon.xlsx
-└─ README.md
-```
+| Source | Role | Repository path / updater |
+|---|---|---|
+| SAGON Cilegon | Market prices and market-level spread | `cilegon_komoditas_shiny/update_sagon_daily.R` |
+| Local Excel | Bootstrap historical prices per commodity | `cilegon_komoditas_shiny/Data komoditas *.xlsx` |
+| ERA5 | Historical hourly climate, aggregated daily | `cilegon_komoditas_shiny/update_era5_daily.R`, `R/data_climate.R` |
+| BMKG | H+1 to H+3 forecast climate | `cilegon_komoditas_shiny/update_bmkg_forecast.R` |
 
-## Sumber Data
+Methodology V2 uses **Cilegon Local Climate**: the nearest 2×2 ERA5 cells to
+Kota Cilegon. `valid_time` remains UTC until the hourly variables are aligned;
+the local calendar date is then derived in `Asia/Jakarta`. See
+[`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
 
-### 1. Harga SAGON
-
-Harga pasar diperoleh dari scraping halaman publik SAGON Cilegon melalui:
-
-```text
-cilegon_komoditas_shiny/update_sagon_daily.R
-```
-
-Script ini mengambil data dari halaman publik SAGON, termasuk halaman pasar:
-
-- `/`
-- `/pasarcilegon`
-- `/pasarblokf`
-- `/pasarmerak`
-
-Output scraper disimpan ke:
+## Architecture
 
 ```text
-cilegon_komoditas_shiny/cache/sagon_daily_long.rds
+SAGON / Excel ─┐
+ERA5 ──────────┼─> data loading + source blending ─> shared feature builder
+BMKG ──────────┘                                      │
+                                                     ├─> candidate forecasts
+                                                     ├─> proxy risk classifier
+                                                     └─> SHAP + Shiny state
 ```
 
-Jika cache SAGON tersedia, `app.R` memprioritaskan cache ini dibanding Excel lokal.
+Core data and model functions live in `R/`; the session-local Shiny modules
+live in `cilegon_komoditas_shiny/modules/`. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-### 2. ERA5 Reanalysis
+## Methodology V2
 
-Data iklim historis diambil dari CDS API Copernicus ERA5 melalui:
+The active methodology is documented in
+[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md). Its key rules are:
+
+- hourly ERA5 variables are aligned by exact timestamp before daily aggregation;
+- price lags and rolling features for `Y[t]` use information no later than
+  `t-1`;
+- training and live inference use the same feature builder;
+- model selection uses the lowest finite rolling-validation WAPE;
+- final test is an untouched chronological block evaluated after selection;
+- residual hybrid, XGBoost Direct, SARIMA, and simple baselines remain distinct
+  candidates; no manual blend or final-test bias correction is active.
+
+The historical V1 record remains at
+[`docs/METHODOLOGY_V1_BASELINE.md`](docs/METHODOLOGY_V1_BASELINE.md) and is not
+an active performance claim.
+
+## Leakage Safeguards
+
+`R/features.R`, `R/evaluation.R`, and the test suite enforce lagged price
+features, lagged market margin, shared train/serve construction, chronological
+folds, refitting at each origin, and validation-only champion selection.
+
+## Evaluation Protocol
+
+The protocol is development period → expanding-window rolling validation →
+untouched final test. Evaluation is one-step-ahead; H+2/H+3 are operational
+forecast horizons, not separate scored horizons in this protocol. Full details
+are in [`docs/EVALUATION_PROTOCOL.md`](docs/EVALUATION_PROTOCOL.md).
+
+The dashboard uses bounded defaults for startup responsiveness and labels those
+numbers as an in-app preview. The verified metrics below come from the full
+protocol command, not from the bounded preview.
+
+## Candidate Models
+
+- Naive;
+- Seasonal Naive 7;
+- MA7;
+- SARIMA;
+- XGBoost Direct;
+- SARIMA + XGBoost Residual.
+
+## Champion Model
+
+For the latest verified full-protocol **Tomat** run, `Naive` is the champion
+because it has the lowest validation WAPE. The dashboard chooses the champion
+dynamically for the selected commodity; the name is not hard-coded in the live
+forecast path.
+
+## Verified Metrics
+
+Verified with the corrected Methodology V2 pipeline on 22 August 2026 using
+Tomat data from 2023-01-02 to 2026-06-28: 12 validation folds (84 rows) and a
+125-row untouched final test from 2026-02-13 to 2026-06-28. Values below are
+from that run only; MAE and RMSE are in the source price unit (Rp), while WAPE
+and MAPE are percentages.
+
+| Candidate | Validation WAPE | Final-test WAPE | Final-test MAE | Final-test RMSE | Final-test MAPE |
+|---|---:|---:|---:|---:|---:|
+| **Naive (champion)** | **3.8168%** | **4.7903%** | **621.33** | **889.94** | **4.7888%** |
+| Seasonal Naive 7 | 8.9059% | 9.8684% | 1,280.00 | 1,654.08 | 9.9717% |
+| MA7 | 5.7382% | 6.7287% | 872.76 | 1,107.73 | 6.8193% |
+| SARIMA | 4.4793% | 5.5566% | 720.73 | 916.01 | 5.6233% |
+| XGBoost Direct | 3.9974% | 5.6689% | 735.30 | 924.71 | 5.7278% |
+| SARIMA + XGBoost Residual | 4.2417% | 5.6116% | 727.86 | 930.67 | 5.6733% |
+
+No live-forecast error is reported because future actuals are not yet available.
+
+## Distribution Stress Proxy
+
+`risk_proxy_v1` predicts a historical proxy label based on future price jump or
+the documented heat-plus-margin rule. The dashboard output is a
+**Distribution Stress Score**, not an observed-event probability. Status bands
+(`Aman`, `Waspada`, `Darurat`) are derived from development-score quantiles.
+See [`docs/RISK_PROXY_DEFINITION.md`](docs/RISK_PROXY_DEFINITION.md).
+
+## SHAP / Explainability
+
+SHAP regression describes contribution to model forecast output. SHAP for the
+classifier describes contribution to the Distribution Stress Score. Both are
+associational explanations; neither establishes causality, a price change in
+Rupiah, or a real distribution-failure probability.
+
+## Limitations
+
+Important limits include public-page scraping, stale or unavailable caches,
+ERA5 historical pseudo-forecast versus BMKG live climate, unresolved
+precipitation-accumulation semantics in source NetCDF, no observed distribution
+failure label, fixed XGBoost parameters, and metrics verified here only for the
+Tomat full run. See [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
+
+## Repository Structure
 
 ```text
-cilegon_komoditas_shiny/update_era5_daily.R
-cilegon_komoditas_shiny/fetch_era5_cds.py
-R/data_climate.R          # modul transformasi iklim (Methodology V2)
-scripts/rebuild_era5_cache.R  # rebuild cache dari file NetCDF lokal
+R/                             reusable data, feature, model, evaluation code
+cilegon_komoditas_shiny/      Shiny app, modules, updaters, Excel inputs, caches
+docs/                          active methodology and reproducibility documents
+notebooks/                     retained ERA5 download and NetCDF inspection notebooks
+scripts/                       evaluation and ERA5 rebuild commands
+tests/testthat/                automated R tests
 ```
 
-**Spatial scope (Methodology V2): Cilegon Local Climate.** Variabel ERA5
-dirata-ratakan secara spasial pada 2x2 sel grid ERA5 (0.1 derajat) terdekat ke
-Kota Cilegon (±106.01 E, 6.00 S). Extent dikonfigurasi di `era5_config()` pada
-`R/data_climate.R` dan disinkronkan dengan `ERA5_AREA` pada
-`fetch_era5_cds.py`. Interpretasi sebelumnya (koridor luas Bandung–Cilegon)
-tidak lagi dipakai sebagai "cuaca lokal Cilegon".
+Generated NetCDF and cache directories retain their existing updater paths and
+are ignored or treated as refresh artifacts. The duplicate root Excel snapshot
+was removed; the app-folder commodity files are canonical bootstrap inputs.
+The two identical ERA5 RDS paths remain as a compatibility alias pair because
+the app and refresh workflow still reference both names.
 
-**Timezone (Methodology V2): eksplisit.** `valid_time` ERA5 disimpan sebagai
-POSIXct **UTC** dan dipertahankan sampai semua variabel (t2m, d2m, tp)
-diselaraskan per timestamp yang sama. Tanggal lokal (`tanggal`) diturunkan
-dengan timezone **Asia/Jakarta** setelah alignment.
+## Local Setup
 
-**Alur pemrosesan (Methodology V2):**
-
-1. `fetch_era5_cds.py` mengunduh `reanalysis-era5-single-levels` jam-jaman
-   (t2m, d2m, tp) untuk area Cilegon lokal.
-2. `R/data_climate.R` membaca tiap file NetCDF, **menjaga `valid_time` eksak**,
-   menggabungkan t2m + d2m + tp berdasarkan `valid_time` (bukan hanya tanggal
-   kalender), menghitung kelembaban relatif dari suhu dan dewpoint pada
-   timestamp yang sama, lalu baru mengagregasi harian.
-3. Definisi harian:
-
-   - `suhu_puncak`: maksimum suhu per jam
-   - `kelembaban`: rata-rata RH per jam
-   - `hujan`: total curah hujan per hari
-
-4. Validasi data-quality dijalankan: duplikat timestamp, jumlah observasi per
-   hari lokal, RH di luar 0-100, presipitasi negatif, hari all-NA.
-
-Cache harian disimpan ke:
-
-```text
-cilegon_komoditas_shiny/cache/era5_daily_bandung_cilegon.rds
-cilegon_komoditas_shiny/cache/era5_daily.rds
-```
-
-> Catatan: nama file cache masih memakai istilah lama `era5_daily_bandung_cilegon.rds`
-> karena sudah direferensikan app/CI; isinya sekarang adalah **Cilegon Local
-> Climate**. Rename file cache dijadwalkan pada refactor Sprint 6.
-
-ERA5 biasanya tertinggal beberapa hari dari tanggal hari ini. Karena itu updater memakai `ERA5_CDS_LAG_DAYS=5` agar tidak memaksa mengambil tanggal yang belum tersedia.
-
-**Temuan data (Sprint 1):** nilai `tp` pada file NetCDF lokal tampak berupa
-variabel **akumulasi** (merambat naik dan me-reset sekitar 01:00 UTC), bukan
-curah hujan per jam. DefinisI `hujan = sum(tp) per hari` saat ini menghasilkan
-rata-rata ~84 mm/hari (2023-01 s.d. 2026-06), lebih tinggi dari klimatologi
-Cilegon. Interpretasi akumulasi ini belum diubah pada Sprint 1 dan perlu
-dikonfirmasi (kemungkinan: total per siklus = nilai akhir akumulasi) sebelum
-fitur `hujan` dianggap valid untuk model.
-
-### 3. BMKG Forecast
-
-Prakiraan cuaca H+1 sampai H+3 diambil dari API publik BMKG:
-
-```text
-https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=<kode>
-```
-
-Updater:
-
-```text
-cilegon_komoditas_shiny/update_bmkg_forecast.R
-```
-
-Output:
-
-```text
-cilegon_komoditas_shiny/cache/bmkg_forecast_daily.rds
-```
-
-BMKG dipakai untuk mengisi kebutuhan prediksi 3 hari ke depan ketika ERA5 historis belum tersedia sampai tanggal terbaru.
-
-## Alur Data
-
-1. Harga SAGON dan data iklim ERA5/BMKG dikumpulkan.
-2. Data dibersihkan, dideduplikasi, dan digabung berdasarkan tanggal.
-3. Harga tiga pasar diringkas menjadi harga rata-rata.
-4. Fitur harga, suhu, kelembaban, hujan, margin pasar, lag, moving average, volatilitas, hari, dan bulan dibentuk.
-5. Data diurutkan berdasarkan tanggal.
-6. Evaluasi memakai protokol time-series (Methodology V2, Sprint 3): development -> rolling-origin validation -> final test untouched. Lihat `docs/EVALUATION_PROTOCOL.md`.
-7. Kandidat dengan WAPE rolling-validation terendah dibekukan dan dipakai untuk prediksi H+1 sampai H+3.
-8. XGBoost klasifikasi dipakai untuk status risiko.
-9. SHAP dipakai untuk interpretasi model regresi dan klasifikasi.
-
-## Evaluasi Model (Methodology V2, Sprint 4)
-
-Evaluasi di `R/evaluation.R`:
-
-- **Split kronologis**: `development period -> rolling-origin validation -> untouched final test`.
-- **Rolling-origin (expanding-window)**: fold ke-`o` melatih di `1..o` dan memvalidasi
-  `o+1..o+H`; origin maju setiap `validation_step`; hanya `max_folds` origin terakhir.
-- **Refit tiap origin**: SARIMA (`auto.arima`) dan XGBoost di-fit ulang pada histori
-  sampai `t-1` untuk tiap prediksi satu langkah — tidak ada "fit sekali lalu disebut
-  rolling".
-- **Kandidat fair**: Naive (`actual[t-1]`), Seasonal Naive 7 (`actual[t-7]`), MA7
-  (`mean(actual[t-7..t-1])`), SARIMA, XGBoost Direct, SARIMA + XGBoost Residual — semuanya memakai
-  informasi yang sama per origin.
-- **Metrik**: MAE, RMSE, WAPE, MAPE, dilaporkan untuk validasi dan final test.
-- **Seleksi champion**: WAPE validasi terendah menang; nilai non-finite diabaikan,
-  pilihan dibekukan sebelum final test, dan final test hanya untuk konfirmasi.
-- **Pseudo-hybrid dihapus**: kandidat residual adalah
-  `max(0, SARIMA + XGBoost predicted residual)`. XGBoost Direct tetap terpisah;
-  tidak ada weighted blend, `hybrid_bias`, atau koreksi manual.
-- Konfigurasi ada di `eval_config()` (default aplikasi) dan `eval_config_full()`
-  (protokol penuh). Jalankan protokol penuh:
-
-  ```bash
-  Rscript --vanilla scripts/run_evaluation.R Tomat --full
-  ```
-
-Hasil full protocol Tomat yang terverifikasi pada 20 Agustus 2026 memilih
-**Naive** dari validation WAPE terendah (3.801593%). Final-test WAPE 4.884106%
-hanya menjadi konfirmasi dan tidak mengubah champion. Dashboard tetap memilih
-secara dinamis; nama model tidak di-hardcode.
-
-## Fitur dan Aturan Timestamp (Methodology V2, Sprint 2)
-
-**Aturan inti:** untuk target prediksi `Y[t]`, fitur turunan dari harga pasar hanya
-memakai informasi yang tersedia paling lambat `t-1`.
-
-- Fitur lag: `harga_kemarin = harga[t-1]`, `lag2 = harga[t-2]`,
-  `lag3 = harga[t-3]`, `lag7 = harga[t-7]`.
-- Fitur rolling: `ma7`, `vol7`, `min7`, `max7` dihitung dari
-  `harga[t-7 .. t-1]` — **tidak** menyertakan `harga[t]`. Baris dengan riwayat
-  kurang dari 7 hari di-buang (drop insufficient-history).
-- Margin pasar: fitur forecasting memakai `margin_hl_lag1[t] = margin_hl[t-1]`
-  (margin hari yang sama = `margin_hl` hanya dipakai untuk label proxy risiko /
-  nowcasting, bukan sebagai prediktor forecasting).
-- Fitur iklim hari `t` (`suhu_puncak`, `kelembaban`, `hujan`, `delta_suhu`, `hei`)
-  pada inference memakai **prakiraan BMKG**; pada training memakai ERA5 observasi
-  sebagai *historical pseudo-forecast* (karena prakiraan BMKG historis tidak
-  disimpan). Ini adalah limitasi yang didokumentasikan, bukan leakage tersembunyi.
-- `suhu_puncak_lag1` memakai iklim `t-1`.
-
-**Satu feature builder** di `R/features.R` dipakai untuk training, test, dan live
-inference (`build_training_features()` dan `build_future_feature_row()`),
-sehingga definisi fitur training = inference. Test otomatis untuk memastikan
-tidak ada target leakage berada di `tests/testthat/test-lag-features.R` dan
-`tests/testthat/test-no-target-leakage.R`.
-
-## Model
-
-### SARIMA
-
-SARIMA digunakan untuk menangkap pola waktu, autokorelasi, dan musiman mingguan. Orde dipilih dengan:
-
-```r
-forecast::auto.arima()
-```
-
-Kebutuhan differencing dibaca dengan ADF/KPSS dan seasonal differencing.
-
-### Residual SARIMA
-
-Residual didefinisikan sebagai:
-
-```text
-e_t = Y_t - SARIMA_t
-```
-
-Residual ini menjadi target XGBoost residual.
-
-### XGBoost Regresi
-
-Ada dua regresi XGBoost dengan konfigurasi tetap:
-
-- XGBoost residual untuk memodelkan `e_t`
-- XGBoost harga langsung untuk memprediksi level harga sebagai kandidat terpisah
-
-Kandidat residual menghitung `max(0, SARIMA + XGBoost residual)`. Champion operasional
-adalah kandidat dengan WAPE rolling-validation terendah, bukan model yang di-hardcode.
-
-Parameter XGBoost dibuat tetap agar alur tetap sederhana:
-
-```text
-max_depth = 3
-eta = 0.05
-nrounds = 120
-subsample = 0.9
-colsample_bytree = 0.9
-```
-
-Tidak ada pencarian hyperparameter atau early stopping. Konfigurasi tetap ini tidak
-disebut "best" atau "optimal"; rolling-validation hanya memilih kandidat model.
-
-### XGBoost Klasifikasi
-
-Model klasifikasi `risk_proxy_v1` menghasilkan **Skor Risiko Tekanan Distribusi** (Distribution Stress Score). Karena data asli tidak memiliki label kejadian distribusi teramati, label proxy dibentuk dari lonjakan harga ke depan atau kombinasi margin pasar tinggi dan suhu tinggi. Skor ini adalah sinyal model-derived berbasis proxy, bukan probabilitas kejadian nyata.
-
-### SHAP
-
-SHAP dipisahkan menjadi dua jalur:
-
-- SHAP regresi: contribution to forecast/model prediction
-- SHAP klasifikasi: contribution to Distribution Stress Score
-
-Summary plot memakai banyak fitur untuk ranking importance. Dependence plot memakai satu fitur suhu untuk membaca asosiasi dengan output model; tidak ada klaim kausal atau threshold suhu yang ditemukan dari plot. Definisi proxy, predictor audit, dan threshold score ada di `docs/RISK_PROXY_DEFINITION.md`.
-
-## Dashboard
-
-Dashboard terdiri dari:
-
-- Panel monitoring: tren harga pasar dan suhu harian
-- Panel prediksi: forecast harga H+1 sampai H+3
-- Panel early warning: status Aman, Waspada, atau Darurat
-- Alur model: penjelasan pipeline SARIMA-XGBoost-SHAP
-- Evaluasi model: training, test 20 persen, dan pembanding model
-- Interpretasi SHAP
-- Data preview
-
-Jalankan lokal:
-
-```r
-shiny::runApp("cilegon_komoditas_shiny")
-```
-
-Atau:
+Requirements: R 4.5.2, Python 3.12 for the ERA5 downloader, and the locked R
+and Python dependencies.
 
 ```powershell
-Rscript -e "shiny::runApp('cilegon_komoditas_shiny', host='127.0.0.1', port=3838)"
-```
-
-## Reproducibility dan clean setup
-
-Versi R yang dikunci adalah 4.5.2. Dependensi R berada di `renv.lock` dan
-diaktifkan oleh `.Rprofile`; `renv/library/` dan cache lokal tidak boleh
-dikomit. Dependensi Python untuk downloader ERA5 berada di
-`requirements.txt` dengan versi langsung dan transitive yang dipin.
-
-Perintah dari mesin bersih:
-
-```powershell
-git clone https://github.com/Salajalaludin/SEC-DATA.git
-cd SEC-DATA
 Rscript -e "renv::restore(prompt = FALSE)"
 python -m venv .venv
 .venv\Scripts\python -m pip install --requirement requirements.txt
-Rscript -e "testthat::test_dir('tests/testthat', reporter = 'summary')"
+```
+
+Start the dashboard:
+
+```powershell
 Rscript -e "shiny::runApp('cilegon_komoditas_shiny', host='127.0.0.1', port=3838)"
-Rscript scripts/run_evaluation.R Tomat --bounded
 ```
 
-App dan evaluasi membutuhkan cache iklim lokal atau cache hasil workflow
-refresh; keduanya tidak memanggil layanan produksi saat test biasa. Pada
-macOS/Linux, ganti `.venv\Scripts\python` dengan `.venv/bin/python`.
+## Tests
 
-## GitHub Actions
-
-Validasi biasa berada di `.github/workflows/ci.yml` dan tidak membutuhkan
-secrets produksi. Refresh data eksternal tetap terpisah di:
-
-```text
-.github/workflows/update-data.yml
+```powershell
+Rscript -e "testthat::test_dir('tests/testthat', reporter = 'summary')"
 ```
 
-Workflow menjalankan:
+## Evaluation
 
-1. `update_sagon_daily.R`
-2. `update_bmkg_forecast.R`
-3. `update_era5_daily.R`
-4. Commit balik cache `.rds` penting ke repository
-
-Workflow refresh memakai `renv::restore()` dan `requirements.txt`, bukan
-install package versi bebas. Strategi cache sengaja tetap sederhana (Option
-A): job hanya stage empat file `.rds` yang diizinkan dan commit ke `main`
-ketika isinya berubah. NetCDF tetap di-ignore; dedicated data branch atau
-object storage belum ditambahkan karena belum tersedia infrastrukturnya.
-
-Cache yang dipersist:
-
-```text
-cilegon_komoditas_shiny/cache/sagon_daily_long.rds
-cilegon_komoditas_shiny/cache/bmkg_forecast_daily.rds
-cilegon_komoditas_shiny/cache/era5_daily.rds
-cilegon_komoditas_shiny/cache/era5_daily_bandung_cilegon.rds
+```powershell
+Rscript --vanilla scripts/run_evaluation.R Tomat --full
+Rscript --vanilla scripts/run_evaluation.R --all --full
 ```
 
-File NetCDF ERA5 tidak dikomit karena besar.
+The second command is optional and may be substantially slower. It writes
+per-commodity evaluation artifacts under the ignored
+`cilegon_komoditas_shiny/cache/evaluation/` directory.
 
-## Repository Secrets
+## Data Refresh
 
-Secrets yang diperlukan:
+The refresh workflow runs the SAGON, BMKG, and ERA5 updaters every six hours
+when GitHub Actions secrets are configured. The local equivalents are:
 
-```text
-CDSAPI_URL
-CDSAPI_KEY
-BMKG_ADM4
-BMKG_FORECAST_DAYS
-GDRIVE_RDS_ID
+```powershell
+Rscript cilegon_komoditas_shiny/update_sagon_daily.R
+Rscript cilegon_komoditas_shiny/update_bmkg_forecast.R
+Rscript cilegon_komoditas_shiny/update_era5_daily.R
 ```
 
-Contoh nilai:
+Refresh output is cache data, not a new validated model result. The dashboard
+shows source dates and session load time separately so a delayed cache is not
+presented as fresh.
 
-```text
-BMKG_ADM4=36.72.07.1001
-BMKG_FORECAST_DAYS=4
-ERA5_CDS_RECENT_DAYS=45
-ERA5_CDS_LAG_DAYS=5
-```
+## Deployment
 
-`CDSAPI_URL` dan `CDSAPI_KEY` berasal dari akun Copernicus CDS.
+The deployable application is `cilegon_komoditas_shiny/`. Deployment targets
+and production credentials are intentionally not committed. Configure the
+approved hosting target and secrets outside the repository, then run the same
+test and smoke checks before publishing.
 
-## File Rahasia
+## License
 
-Jangan commit file berikut:
-
-```text
-.Renviron
-.cdsapirc
-```
-
-Gunakan:
-
-```text
-cilegon_komoditas_shiny/.Renviron.example
-```
-
-sebagai contoh konfigurasi lokal.
-
-## Catatan Metodologis
-
-Poin yang biasanya ditanyakan saat presentasi:
-
-- Data SAGON diperoleh dengan scraping halaman publik, bukan API resmi.
-- ERA5 berupa data jam-jaman yang diagregasi harian.
-- Suhu puncak memakai maksimum harian.
-- Kelembaban memakai rata-rata harian.
-- Curah hujan memakai total harian.
-- **ERA5 (Methodology V2, Sprint 1):** variabel t2m/d2m/tp diselaraskan per
-  `valid_time` eksak (POSIXct UTC) sebelum agregasi harian; RH dihitung dari
-  suhu dan dewpoint pada timestamp yang sama; tanggal lokal memakai
-  Asia/Jakarta; scope spasial adalah **Cilegon Local Climate** (2x2 sel terdekat
-  Kota Cilegon). Lihat `R/data_climate.R`.
-- **Fitur (Methodology V2, Sprint 2):** tidak ada fitur harga untuk target `t`
-  yang membaca `harga[t]`; `ma7/vol7/min7/max7` memakai `harga[t-7..t-1]`;
-  fitur margin forecasting memakai `margin_hl_lag1`; definisi fitur training =
-  inference lewat `R/features.R`. Lihat bagian "Fitur dan Aturan Timestamp".
-- **Evaluasi (Methodology V2, Sprint 3):** data kronologis dibagi development ->
-  rolling-origin validation -> final test untouched; SARIMA/XGBoost di-refit di tiap
-  origin; baseline Naive/SeasonalNaive7/MA7 memakai informasi yang sama; metrik
-  MAE/RMSE/WAPE/MAPE; tidak ada tuning bias pada final test. Lihat
-  `docs/EVALUATION_PROTOCOL.md`.
-- Rolling one-step pada validasi/final test: prediksi satu hari ke depan, aktual
-  diungkap, lalu masuk ke histori untuk langkah berikutnya.
-- Prediksi operasional H+1 sampai H+3 memakai prakiraan BMKG.
-- Residual SARIMA menjadi target XGBoost residual.
-- SHAP summary memakai banyak fitur, sedangkan dependence plot memakai satu fitur utama untuk membaca asosiasi dengan output model.
-
-## Status
-
-Repositori ini dirancang sebagai prototype penelitian dan dashboard operasional awal untuk sistem peringatan dini harga komoditas pangan Kota Cilegon.
-
-Saat ini repo sedang dalam proses validasi **Methodology V2**. Metrik model pada implementasi sekarang adalah baseline **Methodology V1** dan tidak boleh dianggap final sampai refactor metodologi selesai. Lihat `docs/METHODOLOGY_V1_BASELINE.md` untuk rekaman baseline.
+No `LICENSE` file is currently present. Choosing a license remains an owner
+decision; this sprint does not add one silently.

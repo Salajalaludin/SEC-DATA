@@ -35,9 +35,11 @@ Model yang dijalankan di app:
 - XGBoost klasifikasi `risk_proxy_v1` untuk **Skor Risiko Tekanan Distribusi**. Karena data pasar tidak punya label kejadian distribusi teramati, label dibuat sebagai proxy dari lonjakan harga 3 hari ke depan atau kombinasi margin antar pasar tinggi dan suhu tinggi.
 - SHAP aktual dari XGBoost memakai `predict(model, predcontrib = TRUE)`.
 
-Full protocol Tomat yang selesai pada 20 Agustus 2026 memilih **Naive** berdasarkan
-validation WAPE 3.801593%; final-test WAPE 4.884106% hanya konfirmasi. App tidak
+Full protocol Tomat yang selesai pada 22 Agustus 2026 memilih **Naive** berdasarkan
+validation WAPE 3.816794%; final-test WAPE 4.790277% hanya konfirmasi. App tidak
 meng-hardcode hasil ini dan tetap menampilkan kandidat yang dipilih evaluasi aktif.
+Runtime app memakai konfigurasi evaluasi bounded agar startup tetap responsif;
+angka pada panel preview app bukan pengganti metrik full protocol di atas.
 
 Package R yang dipakai: `shiny`, `ggplot2`, `readxl`, `terra`, `forecast`, dan `xgboost`.
 
@@ -235,7 +237,7 @@ Untuk forecast cuaca maju H+1 sampai H+3:
    - `hujan`
 4. Hasilnya disimpan ke:
    `cache/bmkg_forecast_daily.rds`
-5. `app.R` memakai cache ini untuk panel prediksi live H+1 sampai H+3, terpisah dari test historis 20 persen.
+5. `app.R` memakai cache ini untuk panel prediksi live H+1 sampai H+3, terpisah dari final test kronologis.
 6. Kalau ERA5 historis tertinggal beberapa hari, `app.R` menjembatani tanggal kosong terdekat dengan carry-forward singkat dari observasi iklim terakhir, lalu menyambung ke BMKG forecast.
 
 Konfigurasi `.Renviron`:
