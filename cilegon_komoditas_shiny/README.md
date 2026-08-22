@@ -122,10 +122,10 @@ Arsitektur harga realtime yang dipakai sekarang:
    `cache/sagon_daily_long.rds`
 4. `app.R` membaca cache SAGON terbaru. Kalau cache belum ada, app fallback ke file Excel komoditas lokal.
 
-Dependency scraper SAGON:
+Dependency scraper SAGON (locked in `renv.lock`):
 
-```r
-install.packages(c("xml2", "rvest"))
+```powershell
+Rscript -e "renv::restore(prompt = FALSE)"
 ```
 
 Jalankan updater manual:
@@ -147,10 +147,11 @@ url: https://cds.climate.copernicus.eu/api
 key: <token CDS API>
 ```
 
-Install dependency Python updater:
+Install dependency Python updater dari root repository:
 
-```bash
-pip install cdsapi
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install --requirement requirements.txt
 ```
 
 Jalankan updater manual:
@@ -184,10 +185,10 @@ Add arguments:
 "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_era5_daily.R"
 ```
 
-Start in:
+Start in (root repository, supaya `.Rprofile` mengaktifkan renv):
 
 ```text
-C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny
+C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
 ```
 
 6. Simpan task, lalu tes dengan `Run`
@@ -211,10 +212,10 @@ Add arguments:
 "C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny\update_sagon_daily.R"
 ```
 
-Start in:
+Start in (root repository, supaya `.Rprofile` mengaktifkan renv):
 
 ```text
-C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026\cilegon_komoditas_shiny
+C:\2025 coding\Mini Project\Agriculture\NEC SATRIA DATA 2026
 ```
 
 Kalau task SAGON berhasil, cache berikut akan diperbarui:
@@ -244,10 +245,10 @@ BMKG_ADM4=36.72.07.1001
 BMKG_FORECAST_DAYS=4
 ```
 
-Dependency updater BMKG:
+Dependency updater BMKG (sudah termasuk di `renv.lock`):
 
-```r
-install.packages("jsonlite")
+```powershell
+Rscript -e "renv::restore(prompt = FALSE)"
 ```
 
 Jalankan updater manual:

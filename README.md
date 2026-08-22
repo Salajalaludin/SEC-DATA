@@ -294,9 +294,34 @@ Atau:
 Rscript -e "shiny::runApp('cilegon_komoditas_shiny', host='127.0.0.1', port=3838)"
 ```
 
+## Reproducibility dan clean setup
+
+Versi R yang dikunci adalah 4.5.2. Dependensi R berada di `renv.lock` dan
+diaktifkan oleh `.Rprofile`; `renv/library/` dan cache lokal tidak boleh
+dikomit. Dependensi Python untuk downloader ERA5 berada di
+`requirements.txt` dengan versi langsung dan transitive yang dipin.
+
+Perintah dari mesin bersih:
+
+```powershell
+git clone https://github.com/Salajalaludin/SEC-DATA.git
+cd SEC-DATA
+Rscript -e "renv::restore(prompt = FALSE)"
+python -m venv .venv
+.venv\Scripts\python -m pip install --requirement requirements.txt
+Rscript -e "testthat::test_dir('tests/testthat', reporter = 'summary')"
+Rscript -e "shiny::runApp('cilegon_komoditas_shiny', host='127.0.0.1', port=3838)"
+Rscript scripts/run_evaluation.R Tomat --bounded
+```
+
+App dan evaluasi membutuhkan cache iklim lokal atau cache hasil workflow
+refresh; keduanya tidak memanggil layanan produksi saat test biasa. Pada
+macOS/Linux, ganti `.venv\Scripts\python` dengan `.venv/bin/python`.
+
 ## GitHub Actions
 
-Workflow otomatis berada di:
+Validasi biasa berada di `.github/workflows/ci.yml` dan tidak membutuhkan
+secrets produksi. Refresh data eksternal tetap terpisah di:
 
 ```text
 .github/workflows/update-data.yml
@@ -308,6 +333,12 @@ Workflow menjalankan:
 2. `update_bmkg_forecast.R`
 3. `update_era5_daily.R`
 4. Commit balik cache `.rds` penting ke repository
+
+Workflow refresh memakai `renv::restore()` dan `requirements.txt`, bukan
+install package versi bebas. Strategi cache sengaja tetap sederhana (Option
+A): job hanya stage empat file `.rds` yang diizinkan dan commit ke `main`
+ketika isinya berubah. NetCDF tetap di-ignore; dedicated data branch atau
+object storage belum ditambahkan karena belum tersedia infrastrukturnya.
 
 Cache yang dipersist:
 

@@ -66,7 +66,10 @@ def main():
     try:
       import cdsapi
     except ImportError as exc:
-      raise RuntimeError("Python package 'cdsapi' belum terinstall. Jalankan: pip install cdsapi") from exc
+      raise RuntimeError(
+          "Python package 'cdsapi' belum terinstall. Dari root repository jalankan: "
+          f"'{sys.executable}' -m pip install -r requirements.txt"
+      ) from exc
 
     config = parse_cdsapirc(args.cdsapirc)
     start = datetime.strptime(args.start_date, "%Y-%m-%d").date()

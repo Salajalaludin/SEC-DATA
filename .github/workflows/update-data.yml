@@ -20,6 +20,8 @@ jobs:
       BMKG_ADM4: ${{ secrets.BMKG_ADM4 }}
       BMKG_FORECAST_DAYS: ${{ secrets.BMKG_FORECAST_DAYS }}
       GDRIVE_RDS_ID: ${{ secrets.GDRIVE_RDS_ID }}
+      CDSAPI_URL: ${{ secrets.CDSAPI_URL }}
+      CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
 
     steps:
       - name: Checkout repository
@@ -28,6 +30,7 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
+          r-version: "4.5.2"
           use-public-rspm: true
 
       - name: Set up Python
@@ -45,38 +48,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxml2-dev libcurl4-openssl-dev libssl-dev libgdal-dev libgeos-dev libproj-dev libudunits2-dev
 
-      - name: Install R packages
-        run: |
-          Rscript -e "install.packages(c('readxl','terra','forecast','xgboost','xml2','rvest','jsonlite'), repos='https://cloud.r-project.org')"
+      - name: Restore R dependencies
+        run: Rscript -e "renv::restore(prompt = FALSE)"
 
       - name: Install Python packages
         run: |
-          "${PYTHON_EXE}" -m pip install --upgrade pip
-          "${PYTHON_EXE}" -m pip install cdsapi
+          "${PYTHON_EXE}" -m pip install --requirement requirements.txt
           "${PYTHON_EXE}" -c "import sys, cdsapi; print(sys.executable); print('cdsapi OK')"
 
       - name: Write .cdsapirc from GitHub Secrets
         run: |
-          cat > cilegon_komoditas_shiny/.cdsapirc <<EOF
-          url: ${{ secrets.CDSAPI_URL }}
-          key: ${{ secrets.CDSAPI_KEY }}
-          EOF
+          umask 077
+          printf 'url: %s\nkey: %s\n' "$CDSAPI_URL" "$CDSAPI_KEY" > cilegon_komoditas_shiny/.cdsapirc
 
       - name: Write .Renviron overrides
         run: |
-          cat > cilegon_komoditas_shiny/.Renviron.github <<EOF
-          CDSAPIRC_PATH=cilegon_komoditas_shiny/.cdsapirc
-          PYTHON_EXE=${PYTHON_EXE}
-          ERA5_CDS_RECENT_DAYS=45
-          ERA5_CDS_LAG_DAYS=5
-          BMKG_ADM4=${BMKG_ADM4:-36.72.07.1001}
-          BMKG_FORECAST_DAYS=${BMKG_FORECAST_DAYS:-4}
-          GDRIVE_RDS_ID=${GDRIVE_RDS_ID}
-          EOF
-
-      - name: Merge runtime environment
-        run: |
-          cat cilegon_komoditas_shiny/.Renviron.github >> cilegon_komoditas_shiny/.Renviron
+          umask 077
+          printf 'CDSAPIRC_PATH=cilegon_komoditas_shiny/.cdsapirc\nPYTHON_EXE=%s\nERA5_CDS_RECENT_DAYS=45\nERA5_CDS_LAG_DAYS=5\nBMKG_ADM4=%s\nBMKG_FORECAST_DAYS=%s\nGDRIVE_RDS_ID=%s\n' \
+            "$PYTHON_EXE" "${BMKG_ADM4:-36.72.07.1001}" "${BMKG_FORECAST_DAYS:-4}" "$GDRIVE_RDS_ID" \
+            > cilegon_komoditas_shiny/.Renviron
 
       - name: Update SAGON cache
         run: |
@@ -104,4 +94,8 @@ jobs:
           fi
           git commit -m "chore: refresh market and climate caches"
           git push
+
+      - name: Remove runtime credentials
+        if: always()
+        run: rm -f cilegon_komoditas_shiny/.cdsapirc cilegon_komoditas_shiny/.Renviron cilegon_komoditas_shiny/.Renviron.github
 
