@@ -8,12 +8,28 @@ Thumbs.db
 **/.cdsapirc
 .Renviron
 **/.Renviron
+.Renviron.*
+**/.Renviron.*
 !.Renviron.example
-**/.Renviron.example
+!**/.Renviron.example
+
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+*.pem
+*.key
+credentials*.json
+service-account*.json
 
 __pycache__/
 *.pyc
 *.pyo
+.venv/
+venv/
 
 cilegon_komoditas_shiny/cache/
 data_era5_nc4/
