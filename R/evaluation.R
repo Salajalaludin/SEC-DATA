@@ -169,8 +169,8 @@ select_champion <- function(validation_metrics) {
 #' approximation=FALSE, allowdrift=TRUE, allowmean=TRUE), XGBoost fixed params
 #' max_depth=3, eta=0.05, nrounds=120, subsample=0.9, colsample_bytree=0.9,
 #' and residual_hybrid = pmax(0, sarima + xgb_residual). XGBoost Direct remains
-#' a separate candidate. No SHAP/risk overhead is computed here (those are
-#' added by app.R's fit_pipeline_models).
+#' a separate candidate. No SHAP/risk overhead is computed here (risk is
+#' added by app.R's fit_pipeline_models using R/model_risk.R).
 #'
 #' @param history_avg sorted "Harga rata-rata" frame with features.
 #' @return list(models = list(sarima, xgb_reg, xgb_price), feature_formula,

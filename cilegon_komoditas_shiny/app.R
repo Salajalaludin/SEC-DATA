@@ -28,6 +28,7 @@ source_repo_module <- function(start_dir, module) {
 }
 source_repo_module(app_start_dir, "data_climate.R")
 source_repo_module(app_start_dir, "features.R")
+source_repo_module(app_start_dir, "model_risk.R")
 source_repo_module(app_start_dir, "evaluation.R")
 
 era5_extent <- era5_config()$extent
@@ -486,47 +487,30 @@ prepare_avg_frame <- function(df) {
   build_training_features(avg)
 }
 
-fit_pipeline_models <- function(train_avg) {
+fit_pipeline_models <- function(train_avg, risk_training_avg = train_avg) {
   ## Shared fitting core (SARIMA + XGBoost candidates), identical to
-  ## the evaluation refits in R/evaluation.R. This wrapper adds the risk
-  ## classifier, proxy label, status, and SHAP for the dashboard.
+  ## the evaluation refits in R/evaluation.R. The risk model is fitted on the
+  ## development slice and its score bands are frozen for live/final display.
   core <- fit_forecast_models(train_avg)
   model_frame <- core$model_frame
   x_reg <- core$x_reg
 
-  future_jump <- ave(model_frame$harga, rep(1, nrow(model_frame)), FUN = function(x) {
-    sapply(seq_along(x), function(i) {
-      future <- x[(i + 1):min(length(x), i + 3)]
-      if (length(future) == 0 || all(is.na(future))) return(NA_real_)
-      max(future, na.rm = TRUE) / x[i] - 1
-    })
-  })
-  heat_flag <- model_frame$suhu_puncak_lag1 >= stats::quantile(model_frame$suhu_puncak_lag1, 0.75, na.rm = TRUE)
-  margin_flag <- model_frame$margin_hl >= stats::quantile(model_frame$margin_hl, 0.80, na.rm = TRUE)
-  model_frame$gagal_distribusi <- as.integer((future_jump >= 0.10) | (margin_flag & heat_flag))
-  model_frame$gagal_distribusi[is.na(model_frame$gagal_distribusi)] <- 0
-  if (length(unique(model_frame$gagal_distribusi)) < 2) {
-    cutoff <- stats::quantile(future_jump, 0.80, na.rm = TRUE)
-    model_frame$gagal_distribusi <- as.integer(future_jump >= cutoff)
-    model_frame$gagal_distribusi[is.na(model_frame$gagal_distribusi)] <- 0
+  risk_index <- match(as.Date(risk_training_avg$tanggal), as.Date(model_frame$tanggal))
+  risk_index <- risk_index[is.finite(risk_index)]
+  if (length(risk_index) < 2L) {
+    stop("Data development terlalu sedikit untuk model risk.", call. = FALSE)
   }
+  risk_training_frame <- model_frame[risk_index, , drop = FALSE]
+  risk_proxy <- build_risk_proxy_v1(risk_training_frame)
+  risk_fit <- fit_risk_proxy_model(x_reg[risk_index, , drop = FALSE], risk_proxy)
 
-  cls_matrix <- xgb.DMatrix(data = x_reg, label = model_frame$gagal_distribusi)
-  xgb_cls_model <- xgb.train(
-    params = list(objective = "binary:logistic", eval_metric = "logloss", max_depth = 3, eta = 0.05, subsample = 0.9, colsample_bytree = 0.9, nthread = 1),
-    data = cls_matrix,
-    nrounds = 120,
-    verbose = 0
-  )
-  model_frame$risk_prob <- as.numeric(predict(xgb_cls_model, x_reg))
-  model_frame$status <- cut(
-    model_frame$risk_prob,
-    breaks = c(-Inf, 0.45, 0.70, Inf),
-    labels = c("Aman", "Waspada", "Darurat")
-  )
+  full_proxy <- build_risk_proxy_v1(model_frame)
+  for (nm in names(full_proxy$fields)) model_frame[[nm]] <- full_proxy$fields[[nm]]
+  model_frame$distribution_stress_score <- score_distribution_stress(risk_fit$model, x_reg)
+  model_frame$status <- map_stress_status(model_frame$distribution_stress_score, risk_fit$stress_thresholds)
 
   reg_contrib <- as.data.frame(predict(core$models$xgb_reg, x_reg, predcontrib = TRUE))
-  cls_contrib <- as.data.frame(predict(xgb_cls_model, x_reg, predcontrib = TRUE))
+  cls_contrib <- as.data.frame(predict(risk_fit$model, x_reg, predcontrib = TRUE))
   reg_contrib <- reg_contrib[, !names(reg_contrib) %in% c("BIAS", "(Intercept)"), drop = FALSE]
   cls_contrib <- cls_contrib[, !names(cls_contrib) %in% c("BIAS", "(Intercept)"), drop = FALSE]
   shap_reg_summary <- data.frame(
@@ -552,7 +536,7 @@ fit_pipeline_models <- function(train_avg) {
   dep_cls <- data.frame(
     suhu = model_frame$suhu_puncak_lag1,
     shap = cls_contrib[["suhu_puncak_lag1"]],
-    risiko = model_frame$risk_prob
+    stress_score = model_frame$distribution_stress_score
   )
 
   list(
@@ -560,13 +544,20 @@ fit_pipeline_models <- function(train_avg) {
     feature_formula = core$feature_formula,
     feature_cols = core$feature_cols,
     xgb_config = data.frame(max_depth = 3, eta = 0.05, nrounds = 120),
+    risk_proxy_version = risk_fit$version,
+    risk_score_label = RISK_SCORE_LABEL,
+    risk_score_tech_label = RISK_SCORE_TECH_LABEL,
+    risk_proxy_parameters = risk_fit$proxy$parameters,
+    stress_thresholds = risk_fit$stress_thresholds,
+    risk_predictor_cols = risk_fit$predictor_cols,
+    risk_training_range = range(risk_training_frame$tanggal),
     shap_reg_summary = shap_reg_summary,
     shap_cls_summary = shap_cls_summary,
     dep_reg = dep_reg,
     dep_cls = dep_cls,
     stationarity_label = core$stationarity_label,
     sarima_label = core$sarima_label,
-    models = list(sarima = core$models$sarima, xgb_reg = core$models$xgb_reg, xgb_price = core$models$xgb_price, xgb_cls = xgb_cls_model)
+    models = list(sarima = core$models$sarima, xgb_reg = core$models$xgb_reg, xgb_price = core$models$xgb_price, xgb_cls = risk_fit$model)
   )
 }
 
@@ -584,7 +575,7 @@ predict_future_path <- function(fit_obj, history_avg, future_climate, selected_m
   future_ma7 <- numeric(h)
   future_residual_hybrid <- numeric(h)
   future_selected <- numeric(h)
-  future_risk <- numeric(h)
+  future_score <- numeric(h)
   proxy_prices <- as.numeric(history_avg$harga)
   for (i in seq_len(h)) {
     ## Feature row built by the shared builder (R/features.R); identical
@@ -612,7 +603,7 @@ predict_future_path <- function(fit_obj, history_avg, future_climate, selected_m
       residual_hybrid = future_residual_hybrid[i]
     )
     future_selected[i] <- candidate_prediction(candidates, selected_model_key)
-    future_risk[i] <- as.numeric(predict(fit_obj$models$xgb_cls, x_row))
+    future_score[i] <- score_distribution_stress(fit_obj$models$xgb_cls, x_row)
     proxy_prices <- c(proxy_prices, future_selected[i])
     prev_suhu <- as.numeric(future_features$suhu_puncak[i])
   }
@@ -626,8 +617,8 @@ predict_future_path <- function(fit_obj, history_avg, future_climate, selected_m
     xgb_price = future_price,
     residual_hybrid = future_residual_hybrid,
     selected_prediction = future_selected,
-    risk_prob = future_risk,
-    status = as.character(cut(future_risk, breaks = c(-Inf, 0.45, 0.70, Inf), labels = c("Aman", "Waspada", "Darurat"))),
+    distribution_stress_score = future_score,
+    status = map_stress_status(future_score, fit_obj$stress_thresholds),
     stringsAsFactors = FALSE
   )
 }
@@ -702,10 +693,11 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
   rolling_test_long$error <- rolling_test_long$actual - rolling_test_long$predicted
   rolling_test_long$ape <- abs(rolling_test_long$error) / pmax(abs(rolling_test_long$actual), 1)
 
-  live_fit <- fit_pipeline_models(avg)
+  risk_development <- split_evaluation_periods(avg, eval_result$config)$development
+  live_fit <- fit_pipeline_models(avg, risk_training_avg = risk_development)
   live_input <- build_live_future_climate(avg, bmkg_forecast, forecast_horizon)
   live_forecast <- predict_future_path(live_fit, avg, live_input, selected_model_key)
-  last_actual_risk <- tail(live_fit$model_frame$risk_prob, 1)
+  last_actual_score <- tail(live_fit$model_frame$distribution_stress_score, 1)
   forecast_data <- data.frame(
     horizon = factor(c("Aktual terakhir", paste0("H+", seq_len(nrow(live_forecast)))), levels = c("Aktual terakhir", paste0("H+", seq_len(nrow(live_forecast))))),
     harga = c(tail(avg$harga, 1), live_forecast$selected_prediction),
@@ -713,8 +705,8 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
     tanggal = c(tail(avg$tanggal, 1), live_forecast$tanggal),
     komponen = c("Observasi", rep("Forecast", nrow(live_forecast))),
     model_prediksi = c("Aktual", rep(selected_model, nrow(live_forecast))),
-    risk_prob = c(last_actual_risk, live_forecast$risk_prob),
-    status = c(as.character(cut(last_actual_risk, breaks = c(-Inf, 0.45, 0.70, Inf), labels = c("Aman", "Waspada", "Darurat"))), live_forecast$status),
+    distribution_stress_score = c(last_actual_score, live_forecast$distribution_stress_score),
+    status = c(map_stress_status(last_actual_score, live_fit$stress_thresholds), live_forecast$status),
     stringsAsFactors = FALSE
   )
 
@@ -745,8 +737,11 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
       xgb_residual = as.numeric(live_fit$model_frame$xgb_residual),
       xgb_price = as.numeric(live_fit$model_frame$xgb_price),
       residual_hybrid = as.numeric(live_fit$model_frame$residual_hybrid),
-      risk_prob = as.numeric(live_fit$model_frame$risk_prob),
+      future_jump = as.numeric(live_fit$model_frame$future_jump),
+      heat_flag = as.integer(live_fit$model_frame$heat_flag),
+      margin_flag = as.integer(live_fit$model_frame$margin_flag),
       gagal_distribusi = as.integer(live_fit$model_frame$gagal_distribusi),
+      distribution_stress_score = as.numeric(live_fit$model_frame$distribution_stress_score),
       status = as.character(live_fit$model_frame$status),
       stringsAsFactors = FALSE
     ),
@@ -767,6 +762,13 @@ build_pipeline <- function(df, bmkg_forecast = NULL) {
     rolling_test_metrics = rolling_test_metrics,
     rolling_test_long = rolling_test_long,
     xgb_config = live_fit$xgb_config,
+    risk_proxy_version = live_fit$risk_proxy_version,
+    risk_score_label = live_fit$risk_score_label,
+    risk_score_tech_label = live_fit$risk_score_tech_label,
+    risk_proxy_parameters = live_fit$risk_proxy_parameters,
+    stress_thresholds = live_fit$stress_thresholds,
+    risk_predictor_cols = live_fit$risk_predictor_cols,
+    risk_training_range = live_fit$risk_training_range,
     shap_reg_summary = live_fit$shap_reg_summary,
     shap_cls_summary = live_fit$shap_cls_summary,
     dep_reg = live_fit$dep_reg,
@@ -799,6 +801,13 @@ build_dashboard_state <- function(commodity = NULL) {
     eval_development_range = pipeline$eval_development_range,
     eval_final_test_range = pipeline$eval_final_test_range,
     xgb_config = pipeline$xgb_config,
+    risk_proxy_version = pipeline$risk_proxy_version,
+    risk_score_label = pipeline$risk_score_label,
+    risk_score_tech_label = pipeline$risk_score_tech_label,
+    risk_proxy_parameters = pipeline$risk_proxy_parameters,
+    stress_thresholds = pipeline$stress_thresholds,
+    risk_predictor_cols = pipeline$risk_predictor_cols,
+    risk_training_range = pipeline$risk_training_range,
     shap_reg_summary = pipeline$shap_reg_summary,
     shap_cls_summary = pipeline$shap_cls_summary,
     dep_reg = pipeline$dep_reg,
@@ -910,7 +919,7 @@ ui <- fluidPage(
         )),
         column(5, div(class = "card",
           div("Panel early warning", class = "section-title"),
-          div("Status risiko gagal distribusi", class = "section-subtitle"),
+          div("Skor Risiko Tekanan Distribusi (proxy)", class = "section-subtitle"),
           uiOutput("warningBox"),
           tags$hr(),
           tableOutput("policyTable")
@@ -936,9 +945,9 @@ ui <- fluidPage(
           div(class = "flow-box sarima", strong("Tahap 4 - SARIMA"), paste(sarima_label, "diagnostik residual, ekstraksi epsilon.")),
           div(class = "flow-box", strong("Tahap 5 - Rekayasa fitur"), "Suhu, harga, dan kalender digabung sebagai prediktor."),
           div(class = "flow-box xgb", strong("Tahap 6 - XGBoost regresi"), "Residual SARIMA dan harga langsung dimodelkan sebagai dua kandidat terpisah."),
-          div(class = "flow-box shap", strong("Tahap 6 - XGBoost klasifikasi"), "Model independen untuk normal vs gagal distribusi."),
-          div(class = "flow-box shap", strong("Tahap 7 - SHAP regresi"), "Summary dan dependence plot untuk pengaruh harga."),
-          div(class = "flow-box shap", strong("Tahap 7 - SHAP klasifikasi"), "Summary dan dependence plot untuk pemicu risiko."),
+          div(class = "flow-box shap", strong("Tahap 6 - XGBoost klasifikasi"), "Model independen untuk skor tekanan berbasis proxy."),
+          div(class = "flow-box shap", strong("Tahap 7 - SHAP regresi"), "Kontribusi fitur terhadap forecast/model prediction."),
+          div(class = "flow-box shap", strong("Tahap 7 - SHAP klasifikasi"), "Kontribusi fitur terhadap Distribution Stress Score."),
           div(class = "flow-box policy", strong("Tahap 8 - Dashboard"), "Monitoring, prediksi, dan early warning."),
           div(class = "flow-box policy", strong("Output"), "Rekomendasi kebijakan intervensi Pemkot Cilegon.")
         )
@@ -957,7 +966,7 @@ ui <- fluidPage(
           ),
           div(class = "explain-item",
             tags$b("Panel early warning"),
-            "Memakai XGBoost klasifikasi untuk mengubah fitur suhu, harga, dan kalender menjadi probabilitas risiko. Probabilitas itu diterjemahkan ke status aman, waspada, atau darurat untuk rekomendasi kebijakan."
+            "Memakai XGBoost klasifikasi untuk mengubah fitur suhu, harga, dan kalender menjadi skor tekanan berbasis proxy. Skor itu diterjemahkan ke status Aman, Waspada, atau Darurat sebagai panduan monitoring dan eskalasi."
           )
         )
       ),
@@ -1011,7 +1020,7 @@ ui <- fluidPage(
           div(class = "note-item", HTML("<b>SARIMA</b><br>Orde dipilih otomatis oleh <code>forecast::auto.arima()</code> setelah pembacaan kebutuhan differencing ADF/KPSS dan seasonal differencing. Label orde SARIMA ditampilkan di alur model.")),
           div(class = "note-item", HTML("<b>XGBoost</b><br>Regresi XGBoost memakai parameter tetap: max_depth 3, eta 0.05, nrounds 120, subsample 0.9, dan colsample_bytree 0.9. Tidak ada cross-validation/early stopping agar alurnya tetap training-test-prediksi.")),
           div(class = "note-item", HTML("<b>Persamaan</b><br>Residual SARIMA: e_t = Y_t - SARIMA_t. Kandidat residual adalah max(0, SARIMA + prediksi XGBoost residual). XGBoost Direct tetap kandidat terpisah; tidak ada blend atau koreksi manual.")),
-          div(class = "note-item", HTML("<b>SHAP</b><br>Summary plot memakai banyak fitur untuk ranking importance. Dependence plot sengaja memakai satu fitur suhu utama agar ambang pengaruh suhu terhadap harga/risiko terlihat jelas."))
+          div(class = "note-item", HTML("<b>SHAP</b><br>SHAP regresi dibaca sebagai contribution to forecast/model prediction. SHAP risk dibaca sebagai contribution to Distribution Stress Score. Keduanya bersifat associational, bukan causal."))
         )
       )
     ),
@@ -1023,39 +1032,39 @@ ui <- fluidPage(
         div(class = "explain-grid",
           div(class = "explain-item",
             tags$b("SHAP regresi"),
-            "Menjelaskan kontribusi fitur terhadap besar-kecilnya koreksi harga pada residual SARIMA. Nilai SHAP di jalur ini dibaca sebagai dorongan naik atau turun terhadap kandidat SARIMA + XGBoost Residual."
+            "Menjelaskan contribution to forecast/model prediction pada output regresi residual SARIMA. Nilai SHAP dibaca pada skala output model dan bersifat associational, bukan causal."
           ),
           div(class = "explain-item",
             tags$b("SHAP klasifikasi"),
-            "Menjelaskan kontribusi fitur terhadap peluang masuk kelas risiko gagal distribusi. Nilai SHAP di jalur ini dibaca sebagai dorongan menuju status risiko, bukan sebagai perubahan rupiah."
+            "Menjelaskan kontribusi fitur terhadap Distribution Stress Score. Nilai SHAP di jalur ini dibaca pada skala output model, bukan sebagai perubahan rupiah atau efek kausal."
           ),
           div(class = "explain-item",
             tags$b("Implikasi interpretasi"),
-            "Karena maknanya berbeda, satu pasang summary dan dependence plot tidak cukup. Model regresi menjawab seberapa besar dampaknya ke harga, sedangkan model klasifikasi menjawab kapan kondisi mulai berbahaya."
+            "Karena targetnya berbeda, jalur SHAP tetap dipisah. Model regresi menjelaskan contribution to forecast/model prediction, sedangkan model klasifikasi menjelaskan contribution to Distribution Stress Score."
           )
         )
       ),
       fluidRow(
         column(6, div(class = "card",
           div("Regresi - Summary plot", class = "section-title"),
-          div("Ranking variabel suhu terhadap besaran harga", class = "section-subtitle"),
+          div("Ranking kontribusi variabel terhadap forecast/model prediction", class = "section-subtitle"),
           plotOutput("shapRegSummary", height = 260)
         )),
         column(6, div(class = "card",
           div("Regresi - Dependence plot", class = "section-title"),
-          div("Titik suhu ketika efek harga mulai melonjak", class = "section-subtitle"),
+          div("Asosiasi suhu dengan contribution to forecast/model prediction", class = "section-subtitle"),
           plotOutput("shapRegDependence", height = 260)
         ))
       ),
       fluidRow(
         column(6, div(class = "card",
           div("Klasifikasi - Summary plot", class = "section-title"),
-          div("Variabel pemicu risiko gagal distribusi", class = "section-subtitle"),
+          div("Variabel terkait Distribution Stress Score proxy", class = "section-subtitle"),
           plotOutput("shapClsSummary", height = 260)
         )),
         column(6, div(class = "card",
           div("Klasifikasi - Dependence plot", class = "section-title"),
-          div("Ambang suhu terkait status risiko", class = "section-subtitle"),
+          div("Asosiasi suhu dengan Distribution Stress Score", class = "section-subtitle"),
           plotOutput("shapClsDependence", height = 260)
         ))
       ),
@@ -1063,16 +1072,16 @@ ui <- fluidPage(
         div("Keterangan variabel", class = "section-title"),
         div("Definisi fitur yang dipakai pada model regresi residual dan klasifikasi risiko", class = "section-subtitle"),
         div(class = "note-grid",
-          div(class = "note-item", HTML("<b>suhu_puncak_lag1</b><br>Suhu puncak koridor distribusi pada hari sebelumnya. Dipakai untuk menangkap efek panas yang muncul terlambat pada harga atau distribusi.")),
-          div(class = "note-item", HTML("<b>HEI</b><br>Heat Exposure Index, indeks paparan panas. Di app ini dihitung dari kelebihan suhu di atas 32 derajat C dikalikan kondisi kelembaban yang mendukung stres panas.")),
+          div(class = "note-item", HTML("<b>suhu_puncak_lag1</b><br>Suhu puncak koridor distribusi pada hari sebelumnya. Dipakai sebagai predictor kondisi suhu dalam output model, bukan bukti efek kausal pada harga atau distribusi.")),
+          div(class = "note-item", HTML("<b>HEI</b><br>Heat Exposure Index, indeks paparan panas. Referensi 32 derajat C adalah heuristic feature reference, bukan threshold risiko atau temuan kausal.")),
           div(class = "note-item", HTML("<b>delta_suhu</b><br>Perubahan suhu puncak dibanding hari sebelumnya. Nilai besar berarti terjadi lonjakan atau penurunan suhu mendadak.")),
           div(class = "note-item", HTML("<b>ma7</b><br>Rata-rata bergerak harga tomat 7 hari. Fitur ini mewakili level harga jangka pendek sebelum prediksi dibuat.")),
           div(class = "note-item", HTML("<b>margin_hl_lag1</b><br>Selisih harga tertinggi dan terendah dari tiga pasar pada HARI SEBELUMNYA (margin_hl di-lag 1 hari). Karena margin hari yang sama baru diketahui setelah pasar tutup, fitur forecasting memakai margin kemarin agar tidak bocor. margin_hl hari yang sama hanya dipakai untuk label proxy risiko, bukan sebagai prediktor.")),
-          div(class = "note-item", HTML("<b>hujan</b><br>Total curah hujan harian dari ERA5. Dipakai karena hujan dapat memengaruhi distribusi, pasokan, dan kualitas komoditas.")),
+          div(class = "note-item", HTML("<b>hujan</b><br>Total curah hujan harian dari ERA5. Dipakai sebagai predictor konteks cuaca dalam output model; SHAP tidak membuktikan pengaruh kausal.")),
           div(class = "note-item", HTML("<b>day_of_week</b><br>Hari dalam minggu. Fitur kalender untuk menangkap pola pasar mingguan.")),
           div(class = "note-item", HTML("<b>month</b><br>Bulan kalender. Fitur ini membantu membaca pola musiman pasokan dan cuaca.")),
-          div(class = "note-item", HTML("<b>Nilai SHAP</b><br>Kontribusi variabel terhadap output model. Pada regresi berarti dorongan ke harga, pada klasifikasi berarti dorongan ke risiko gagal distribusi.")),
-          div(class = "note-item", HTML("<b>gagal_distribusi</b><br>Label proxy karena data tidak menyediakan status kejadian asli. Dibentuk dari lonjakan harga 3 hari ke depan atau kombinasi margin tinggi dan panas tinggi."))
+          div(class = "note-item", HTML("<b>Nilai SHAP</b><br>Regresi: contribution to forecast/model prediction. Risk: contribution to Distribution Stress Score. Interpretasi bersifat associational, bukan causal.")),
+          div(class = "note-item", HTML("<b>gagal_distribusi</b><br>Technical proxy label risk_proxy_v1; bukan catatan kejadian distribusi teramati. Dibentuk dari lonjakan harga 3 hari ke depan atau kombinasi margin tinggi dan panas tinggi."))
         )
       )
     ),
@@ -1148,7 +1157,7 @@ server <- function(input, output, session) {
     div(
       div("Suhu puncak koridor", class = "metric-label"),
       div(sprintf("%.1f derajat C", current$suhu_puncak), class = "metric-value"),
-      div(paste0(ifelse(current$suhu_puncak >= 32, "Di atas ambang 32 derajat C", "Di bawah ambang 32 derajat C"), " | Sumber: ", current$sumber_iklim), class = "metric-note")
+      div(paste0(ifelse(current$suhu_puncak >= 32, "Di atas referensi HEI 32 derajat C (heuristic)", "Di bawah referensi HEI 32 derajat C (heuristic)"), " | Sumber: ", current$sumber_iklim), class = "metric-note")
     )
   })
 
@@ -1200,12 +1209,18 @@ server <- function(input, output, session) {
 
   output$warningBox <- renderUI({
     refresh_key()
-    risk_3day <- max(live_forecast_data$risk_prob, na.rm = TRUE)
-    status <- as.character(cut(risk_3day, breaks = c(-Inf, 0.45, 0.70, Inf), labels = c("Aman", "Waspada", "Darurat")))
+    risk_3day <- max(live_forecast_data$distribution_stress_score, na.rm = TRUE)
+    status <- map_stress_status(risk_3day, stress_thresholds)
+    threshold_values <- stress_thresholds$values
+    band_text <- sprintf(
+      "Band: Aman < %.0f/100; Waspada %.0f sampai < %.0f/100; Darurat >= %.0f/100.",
+      100 * threshold_values[["waspada"]], 100 * threshold_values[["waspada"]],
+      100 * threshold_values[["darurat"]], 100 * threshold_values[["darurat"]]
+    )
     test_mape <- mean(test_data$ape, na.rm = TRUE)
     HTML(sprintf(
-      "<div class='status-pill %s'>%s</div><p style='margin-top:12px;color:#f5f2e8;font-weight:700;'>Probabilitas gagal distribusi tertinggi %.0f%% pada prediksi H+1 sampai H+3</p><p style='color:#c8c7bc;'>Model utama: <b>%s</b>. MAPE final test: <b>%.1f%%</b>. Prediksi 3 hari ke depan memakai prakiraan BMKG.</p>",
-      status, status, 100 * risk_3day, selected_model, 100 * test_mape
+      "<div class='status-pill %s'>%s</div><p style='margin-top:12px;color:#f5f2e8;font-weight:700;'>Skor Risiko Tekanan Distribusi tertinggi %.0f/100 pada prediksi H+1 sampai H+3</p><p style='color:#c8c7bc;'>%s Model utama: <b>%s</b>. MAPE final test: <b>%.1f%%</b>. Prediksi 3 hari ke depan memakai prakiraan BMKG. Ini adalah sinyal turunan model berbasis proxy, bukan probabilitas kejadian nyata teramati.</p>",
+      status, status, 100 * risk_3day, band_text, selected_model, 100 * test_mape
     ))
   })
 
@@ -1213,10 +1228,11 @@ server <- function(input, output, session) {
     refresh_key()
     data.frame(
       Status = c("Aman", "Waspada", "Darurat"),
+      Makna = c("Band skor proxy rendah", "Band skor proxy menengah", "Band skor proxy tinggi"),
       Tindakan = c(
-        "Monitoring harian pasar dan cuaca",
-        "Koordinasi pasokan dan inspeksi stok distributor",
-        "Intervensi distribusi, operasi pasar, dan komunikasi publik"
+        "Monitoring harian harga, pasar, dan cuaca",
+        "Verifikasi stok/pasokan dan koordinasi distributor",
+        "Eskalasi pemantauan, cek lapangan, siapkan opsi operasi pasar"
       )
     )
   }, striped = FALSE, bordered = FALSE, spacing = "s")
@@ -1293,19 +1309,17 @@ server <- function(input, output, session) {
     refresh_key()
     ggplot(shap_reg_summary, aes(kontribusi, fitur)) +
       geom_col(fill = "#ffb866", width = 0.7) +
-      labs(x = "Mean |SHAP|", y = NULL) +
+      labs(x = "Mean |SHAP| contribution to forecast/model prediction", y = NULL) +
       theme_dark_cilegon()
   })
 
   output$shapRegDependence <- renderPlot({
     refresh_key()
     ggplot(dep_reg, aes(suhu, shap)) +
-      geom_vline(xintercept = 32.2, linetype = 2, color = "#ffb866") +
       geom_point(aes(color = harga), alpha = 0.62, size = 1.7) +
       geom_smooth(color = "#ffb866", linewidth = 1.1, se = FALSE, method = "loess", formula = y ~ x) +
       scale_color_gradient(low = "#61c9a8", high = "#ffb866", labels = rupiah) +
-      annotate("text", x = 32.35, y = min(dep_reg$shap, na.rm = TRUE), label = "ambang 32.2 derajat C", color = "#ffcf92", hjust = 0, vjust = -0.3) +
-      labs(x = "Suhu puncak lag-1 (derajat C)", y = "Nilai SHAP harga") +
+      labs(x = "Suhu puncak lag-1 (derajat C)", y = "SHAP contribution to forecast/model prediction") +
       theme_dark_cilegon()
   })
 
@@ -1313,7 +1327,7 @@ server <- function(input, output, session) {
     refresh_key()
     ggplot(shap_cls_summary, aes(kontribusi, fitur)) +
       geom_col(fill = "#ff9a7d", width = 0.7) +
-      labs(x = "Mean |SHAP|", y = NULL) +
+      labs(x = "Mean |SHAP| contribution to Distribution Stress Score", y = NULL) +
       theme_dark_cilegon()
   })
 
@@ -1321,12 +1335,10 @@ server <- function(input, output, session) {
     refresh_key()
     ggplot(dep_cls, aes(suhu, shap)) +
       geom_hline(yintercept = 0, color = "#8a8c84") +
-      geom_vline(xintercept = 33.0, linetype = 2, color = "#ff9a7d") +
-      geom_point(aes(color = risiko), alpha = 0.62, size = 1.7) +
+      geom_point(aes(color = stress_score), alpha = 0.62, size = 1.7) +
       geom_smooth(color = "#ff9a7d", linewidth = 1.1, se = FALSE, method = "loess", formula = y ~ x) +
-      scale_color_gradient(low = "#61c9a8", high = "#ff9a7d", labels = function(x) paste0(round(100 * x), "%")) +
-      annotate("text", x = 33.15, y = max(dep_cls$shap, na.rm = TRUE) * 0.18, label = "risiko naik", color = "#ffc2b1", hjust = 0) +
-      labs(x = "Suhu puncak lag-1 (derajat C)", y = "Nilai SHAP risiko") +
+      scale_color_gradient(low = "#61c9a8", high = "#ff9a7d", labels = function(x) paste0(round(100 * x), "/100")) +
+      labs(x = "Suhu puncak lag-1 (derajat C)", y = "SHAP contribution to Distribution Stress Score") +
       theme_dark_cilegon()
   })
 
@@ -1342,7 +1354,7 @@ server <- function(input, output, session) {
       xgb_residual = rupiah(train_shown$xgb_residual),
       prediksi_final = "-",
       error = "-",
-      risiko = sprintf("%.0f%%", 100 * train_shown$risk_prob),
+      skor_tekanan = sprintf("%.0f/100", 100 * train_shown$distribution_stress_score),
       status = train_shown$status,
       stringsAsFactors = FALSE
     )

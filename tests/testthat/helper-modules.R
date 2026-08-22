@@ -12,6 +12,7 @@ root <- find_repo_root()
 suppressPackageStartupMessages(library(xgboost))
 source(file.path(root, "R", "features.R"), local = FALSE)
 source(file.path(root, "R", "evaluation.R"), local = FALSE)
+source(file.path(root, "R", "model_risk.R"), local = FALSE)
 
 #' Small synthetic "Harga rata-rata" frame with features for evaluation tests.
 make_synthetic_avg <- function(n = 100, start = as.Date("2023-01-25")) {

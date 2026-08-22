@@ -32,7 +32,7 @@ Model yang dijalankan di app:
 - SARIMA/ARIMA aktual dengan `forecast::auto.arima()` pada harga rata-rata tiga pasar.
 - XGBoost regresi untuk memodelkan residual SARIMA.
 - Kandidat harga: SARIMA, XGBoost Direct, dan SARIMA + XGBoost Residual, bersama Naive, Seasonal Naive 7, dan MA7. Dashboard memakai champion validasi sebenarnya.
-- XGBoost klasifikasi untuk status risiko. Karena data pasar tidak punya label kejadian gagal distribusi asli, label dibuat sebagai proxy dari lonjakan harga 3 hari ke depan atau kombinasi margin antar pasar tinggi dan suhu tinggi.
+- XGBoost klasifikasi `risk_proxy_v1` untuk **Skor Risiko Tekanan Distribusi**. Karena data pasar tidak punya label kejadian distribusi teramati, label dibuat sebagai proxy dari lonjakan harga 3 hari ke depan atau kombinasi margin antar pasar tinggi dan suhu tinggi.
 - SHAP aktual dari XGBoost memakai `predict(model, predcontrib = TRUE)`.
 
 Full protocol Tomat yang selesai pada 20 Agustus 2026 memilih **Naive** berdasarkan
@@ -50,7 +50,7 @@ Ringkasan metodologi untuk penjelasan:
 - Persamaan residual SARIMA: `e_t = Y_t - SARIMA_t`. Residual ini menjadi target XGBoost residual. Kandidat residual menghitung `max(0, SARIMA + XGBoost predicted residual)`. XGBoost Direct tetap terpisah; weighted blend, `hybrid_bias`, dan koreksi manual warisan sudah dihapus.
 - Orde SARIMA dipilih dengan `forecast::auto.arima()` setelah pengecekan kebutuhan differencing ADF/KPSS dan seasonal differencing.
 - XGBoost memakai konfigurasi tetap: `max_depth = 3`, `eta = 0.05`, `nrounds = 120`, `subsample = 0.9`, dan `colsample_bytree = 0.9`. Tidak ada pencarian hyperparameter atau early stopping; konfigurasi ini tidak disebut best/optimal.
-- SHAP summary plot memakai banyak fitur untuk ranking importance. SHAP dependence plot memakai satu fitur suhu utama agar ambang efek suhu mudah dibaca.
+- SHAP summary plot memakai banyak fitur untuk ranking importance. SHAP regresi dibaca sebagai contribution to forecast/model prediction, sedangkan SHAP risk sebagai contribution to Distribution Stress Score; keduanya associational, bukan causal. Dependence plot suhu tidak menetapkan threshold suhu.
 
 ## Arsitektur update ERA5
 
