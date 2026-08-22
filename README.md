@@ -218,10 +218,22 @@ presented as fresh.
 
 ## Deployment
 
-The deployable application is `cilegon_komoditas_shiny/`. Deployment targets
-and production credentials are intentionally not committed. Configure the
-approved hosting target and secrets outside the repository, then run the same
-test and smoke checks before publishing.
+The deployable application is generated into `deploy_bundle/` so the hosted
+app has the flat layout expected by `app.R`, while source code remains in its
+canonical repository paths. Build the bundle locally with:
+
+    Rscript scripts/build_shinyapps_bundle.R
+
+For shinyapps.io, install `rsconnect` in the local R environment and provide
+`SHINYAPPS_NAME`, `SHINYAPPS_TOKEN`, and `SHINYAPPS_SECRET` without committing
+them. Optional names are `SHINYAPPS_APP_NAME` and `SHINYAPPS_APP_TITLE`.
+Then run:
+
+    Rscript scripts/deploy_shinyapps_placeholder.R
+
+See [deploy_bundle/README.md](deploy_bundle/README.md) for the placeholder
+workflow. Data refresh commits updated static caches separately; redeploy the
+bundle when the hosted app should receive those refreshed caches.
 
 ## License
 
