@@ -69,6 +69,9 @@ Boundary cache tetap ringan:
 - fitted model, evaluation, risk, dan SHAP artifacts hidup di memory state session;
 - metadata state mencatat `generated_at`, commodity, date range, Methodology V2, model identifier, dan timestamp cache bila tersedia.
 
+Bootstrap model pertama dijalankan setelah UI Shiny selesai flush per session;
+worker tidak menunggu komputasi model, evaluasi, dan SHAP pada fase startup.
+
 Tidak ada database, background job, atau perubahan formula/statistical selection pada Sprint 6.
 
 ## Arsitektur update ERA5

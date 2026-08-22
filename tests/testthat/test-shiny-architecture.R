@@ -101,7 +101,8 @@ test_that("active Shiny code has no global session-state write", {
   expect_false(grepl("<<-", code, fixed = TRUE))
   expect_false(grepl("assign\\s*\\(", code))
   expect_false(grepl("apply_dashboard_state", code, fixed = TRUE))
-  expect_true(grepl("reactiveVal\\(bootstrap_snapshot\\)", code))
+  expect_true(grepl("reactiveVal\\(NULL\\)", code))
+  expect_true(grepl("onFlushed", code, fixed = TRUE))
 })
 
 test_that("monitoring module sends namespaced refresh events", {
