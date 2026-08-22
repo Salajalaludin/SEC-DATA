@@ -36,6 +36,9 @@ SEC-DATA is a defensible prototype, not a validated production decision system.
 ## Operational limitations
 
 - SAGON, BMKG, ERA5, and cache availability can differ between machines.
+- The hosted startup optimization depends on a generated, date-matched
+  evaluation artifact; without it, rolling evaluation can be slow on a small
+  worker. A mismatched artifact is rejected rather than presented as current.
 - A clean checkout needs dependency restore and appropriate non-secret runtime
   configuration before the app can start.
 - The current refresh workflow commits selected cache files to Git; object

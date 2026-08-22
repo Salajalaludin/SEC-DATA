@@ -88,9 +88,10 @@ untouched final test. Evaluation is one-step-ahead; H+2/H+3 are operational
 forecast horizons, not separate scored horizons in this protocol. Full details
 are in [`docs/EVALUATION_PROTOCOL.md`](docs/EVALUATION_PROTOCOL.md).
 
-The dashboard uses bounded defaults for startup responsiveness and labels those
-numbers as an in-app preview. The verified metrics below come from the full
-protocol command, not from the bounded preview.
+The dashboard uses a matching full-protocol evaluation cache when the deployment
+bundle contains one; otherwise it falls back to bounded `eval_config()` defaults.
+The verified metrics below come from the full protocol command, not from an
+unverified fallback run.
 
 ## Candidate Models
 
@@ -234,9 +235,13 @@ Then run:
 See [deploy_bundle/README.md](deploy_bundle/README.md) for the placeholder
 workflow. Data refresh commits updated static caches separately; redeploy the
 bundle when the hosted app should receive those refreshed caches. The hosted
+workflow. Data refresh commits updated static caches separately; redeploy the
+bundle when the hosted app should receive those refreshed caches. The hosted
 bundle is cache-only and excludes the local ERA5 NetCDF/`terra` updater path.
-The first model state is built after the lightweight Shiny UI flushes, so
-worker startup does not wait for model, evaluation, and SHAP computation.
+The builder copies matching `evaluation_*.rds` artifacts when present, so the
+hosted worker does not repeat expensive rolling refits for the same cache
+snapshot. A changed snapshot is rejected by date matching and falls back to
+the active bounded evaluation path.
 
 ## License
 

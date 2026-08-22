@@ -93,13 +93,37 @@ server <- function(input, output, session) {
   # startup, while every session still owns an independent reactive state.
   state <- reactiveVal(NULL)
 
+  build_state <- function(commodity_value) {
+    evaluation_builder <- function(avg, evaluation_config) {
+      cached <- read_cached_evaluation(avg, app_start_dir, commodity_value)
+      if (!is.null(cached)) {
+        return(cached)
+      }
+      evaluate_pipeline(avg, evaluation_config)
+    }
+    pipeline_builder <- function(df, bmkg_forecast, forecast_horizon) {
+      build_pipeline(
+        df,
+        bmkg_forecast,
+        forecast_horizon,
+        evaluation_builder = evaluation_builder
+      )
+    }
+    build_dashboard_state(
+      commodity_value,
+      app_start_dir,
+      config,
+      pipeline_builder = pipeline_builder
+    )
+  }
+
   refresh_dashboard <- function(commodity_value = NULL) {
     previous_state <- isolate(state())
     if (is.null(commodity_value) || !nzchar(commodity_value)) {
       commodity_value <- if (is.null(previous_state)) initial_commodity else previous_state$commodity
     }
     tryCatch({
-      next_state <- build_dashboard_state(commodity_value, app_start_dir, config)
+      next_state <- build_state(commodity_value)
       state(next_state)
       showNotification("Data realtime berhasil diperbarui.", type = "message", duration = 3)
       invisible(TRUE)
@@ -126,7 +150,7 @@ server <- function(input, output, session) {
 
   session$onFlushed(function() {
     tryCatch({
-      state(build_dashboard_state(initial_commodity, app_start_dir, config))
+      state(build_state(initial_commodity))
     }, error = function(e) {
       showNotification(
         paste("Inisialisasi dashboard gagal:", conditionMessage(e)),

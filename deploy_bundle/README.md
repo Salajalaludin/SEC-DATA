@@ -15,10 +15,20 @@ The builder creates a self-contained bundle with:
 - Shiny modules and www assets
 - commodity workbooks
 - the four runtime cache inputs used by the dashboard
+- optional matching `cache/evaluation/evaluation_*.rds` artifacts
 
 The hosted bundle is cache-only: local ERA5 NetCDF files and the native
 `terra`/GDAL updater dependency are intentionally excluded. ERA5 cache rebuilds
 continue to run locally through `cilegon_komoditas_shiny/update_era5_daily.R`.
+
+For practical hosted startup, run the full Tomat evaluation once before
+building the bundle:
+
+    Rscript --vanilla scripts/run_evaluation.R Tomat --full
+
+The builder copies the resulting evaluation artifact when its date range
+matches the current data. If no matching artifact is present, the app falls
+back to its bounded evaluation path and may take longer to become ready.
 
 Upload requires credentials supplied through the environment. Never place
 tokens, secrets, .Renviron, or .cdsapirc in this directory or in Git.

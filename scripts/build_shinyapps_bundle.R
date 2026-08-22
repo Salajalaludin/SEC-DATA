@@ -87,6 +87,17 @@ cache_names <- c(
 )
 cache_files <- file.path(app_dir, "cache", cache_names)
 stop_if_missing(cache_files, "Cache runtime wajib")
+evaluation_cache_dir <- file.path(app_dir, "cache", "evaluation")
+evaluation_cache_files <- if (dir.exists(evaluation_cache_dir)) {
+  list.files(
+    evaluation_cache_dir,
+    pattern = "^evaluation_.*[.]rds$",
+    full.names = TRUE,
+    ignore.case = TRUE
+  )
+} else {
+  character()
+}
 
 if (!file.copy(file.path(app_dir, "app.R"), file.path(bundle_dir, "app.R"), overwrite = TRUE)) {
   stop("Gagal menyalin app.R.", call. = FALSE)
@@ -108,8 +119,21 @@ dir.create(file.path(bundle_dir, "cache"), recursive = TRUE, showWarnings = FALS
 if (!all(file.copy(cache_files, file.path(bundle_dir, "cache", cache_names), overwrite = TRUE))) {
   stop("Gagal menyalin cache runtime.", call. = FALSE)
 }
+if (length(evaluation_cache_files) > 0) {
+  dir.create(file.path(bundle_dir, "cache", "evaluation"), recursive = TRUE, showWarnings = FALSE)
+  if (!all(file.copy(
+    evaluation_cache_files,
+    file.path(bundle_dir, "cache", "evaluation", basename(evaluation_cache_files)),
+    overwrite = TRUE
+  ))) {
+    stop("Gagal menyalin cache evaluasi.", call. = FALSE)
+  }
+}
 
 bundle_files <- list.files(bundle_dir, recursive = TRUE, full.names = FALSE)
 cat("Bundle shinyapps.io siap:", bundle_dir, "\n")
 cat("Jumlah file:", length(bundle_files), "\n")
-cat("Workbooks:", length(workbooks), "| Cache:", length(cache_files), "\n")
+cat(
+  "Workbooks:", length(workbooks), "| Cache:", length(cache_files),
+  "| Evaluation cache:", length(evaluation_cache_files), "\n"
+)
