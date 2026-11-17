@@ -38,10 +38,13 @@ Model yang dijalankan di app:
 Full protocol Tomat yang selesai pada 22 Agustus 2026 memilih **Naive** berdasarkan
 validation WAPE 3.816794%; final-test WAPE 4.790277% hanya konfirmasi. App tidak
 meng-hardcode hasil ini dan tetap menampilkan kandidat yang dipilih evaluasi aktif.
-Runtime app memakai konfigurasi evaluasi bounded agar startup tetap responsif;
-angka pada panel preview app bukan pengganti metrik full protocol di atas.
+Jika artefak evaluasi full-protocol dengan rentang tanggal yang cocok tersedia,
+app memakainya untuk menghindari refit rolling saat startup; jika tidak, app
+memakai konfigurasi bounded dan menandainya pada status evaluasi.
 
-Package R yang dipakai: `shiny`, `ggplot2`, `readxl`, `terra`, `forecast`, dan `xgboost`.
+Package R runtime app yang dipakai: `shiny`, `ggplot2`, `readxl`, `forecast`,
+dan `xgboost`. Package `terra` hanya diperlukan oleh updater/rebuild ERA5
+lokal (`R/era5_netcdf.R`), bukan oleh bundle Shiny cache-only.
 
 Ringkasan metodologi untuk penjelasan:
 
@@ -64,8 +67,14 @@ Boundary cache tetap ringan:
 
 - raw market, ERA5 harian, dan BMKG forecast dibaca dari cache RDS yang sudah ada;
 - processed features hidup di memory state session;
-- fitted model, evaluation, risk, dan SHAP artifacts hidup di memory state session;
+- fitted model, risk, dan SHAP artifacts hidup di memory state session; evaluasi
+  dapat dibaca dari artefak full-protocol yang tanggalnya cocok atau dihitung
+  ulang dari pipeline aktif;
 - metadata state mencatat `generated_at`, commodity, date range, Methodology V2, model identifier, dan timestamp cache bila tersedia.
+
+Bootstrap model pertama dijalankan setelah UI Shiny selesai flush per session.
+Deployment bundle menyertakan artefak evaluasi yang cocok bila tersedia agar
+worker tidak mengulang rolling refit mahal pada fase startup.
 
 Tidak ada database, background job, atau perubahan formula/statistical selection pada Sprint 6.
 
@@ -79,9 +88,10 @@ Arsitektur yang dipakai sekarang:
    `cache/era5_daily_bandung_cilegon.rds`
 4. `app.R` hanya membaca cache terbaru. App tidak lagi mengunduh ERA5 dari CDS saat user membuka dashboard.
 
-Transformasi NetCDF -> harian dipusatkan di **`R/data_climate.R`** (Methodology V2)
-dan dipakai bersama oleh `update_era5_daily.R` dan `app.R` agar tidak ada dua
-implementasi yang menyimpang:
+Transformasi NetCDF -> harian dipusatkan di **`R/data_climate.R`** dan
+**`R/era5_netcdf.R`** (Methodology V2). `update_era5_daily.R` dan
+`scripts/rebuild_era5_cache.R` memuat kedua modul; `app.R` hanya memuat modul
+cache/runtime sehingga deployment tidak membutuhkan native GDAL/terra:
 
 - `valid_time` dipertahankan sebagai POSIXct UTC sampai t2m/d2m/tp diselaraskan
   per timestamp eksak;

@@ -20,6 +20,7 @@ source_climate_module <- function(start_dir) {
   source(hit[[1]], local = FALSE)
 }
 source_climate_module(app_dir)
+source(file.path(dirname(normalizePath(app_dir, winslash = "/")), "R", "era5_netcdf.R"), local = FALSE)
 
 era5_extent <- era5_config()$extent
 

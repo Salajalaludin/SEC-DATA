@@ -11,7 +11,7 @@ ERA5 cache/NetCDF ───┼─> load_project_data()
 BMKG cache ──────────┘          │
                                 ├─> prepare_avg_frame()
                                 ├─> build_training_features()
-                                ├─> evaluate_pipeline()
+                                ├─> read_cached_evaluation() or evaluate_pipeline()
                                 ├─> fit_pipeline_models()
                                 └─> build_dashboard_state()
                                          │
@@ -37,10 +37,12 @@ BMKG cache ──────────┘          │
 
 ## State and session isolation
 
-`bootstrap_snapshot` is an immutable startup artifact. Each Shiny session places
-its own snapshot in a `reactiveVal`; commodity switching and refresh replace
-that session's state only. Processed features and model artifacts remain in
-session memory. No session-selected commodity is assigned into `.GlobalEnv`.
+Each Shiny session places its own snapshot in a `reactiveVal`; commodity
+switching and refresh replace that session's state only. Processed features and
+model artifacts remain in session memory. A date-matched full-protocol
+evaluation artifact can avoid repeating rolling refits in the hosted bundle;
+otherwise the active evaluation function runs. No session-selected commodity
+is assigned into `.GlobalEnv`.
 
 ## Refresh and fallback behavior
 
@@ -62,6 +64,7 @@ cilegon_komoditas_shiny/cache/sagon_daily_long.rds
 cilegon_komoditas_shiny/cache/bmkg_forecast_daily.rds
 cilegon_komoditas_shiny/cache/era5_daily.rds
 cilegon_komoditas_shiny/cache/era5_daily_bandung_cilegon.rds
+cilegon_komoditas_shiny/cache/evaluation/evaluation_<commodity>.rds  # optional generated cache
 ```
 
 The last filename is legacy naming, not an active Bandung–Cilegon spatial

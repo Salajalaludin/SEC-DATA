@@ -167,12 +167,53 @@ build_live_future_climate <- function(avg, bmkg_forecast, horizon = FORECAST_HOR
   )
 }
 
-build_pipeline <- function(df, bmkg_forecast = NULL, forecast_horizon = FORECAST_HORIZON) {
+evaluation_cache_path <- function(app_dir, commodity) {
+  file.path(
+    app_dir,
+    "cache",
+    "evaluation",
+    paste0("evaluation_", gsub("[^A-Za-z0-9_-]+", "_", commodity), ".rds")
+  )
+}
+
+read_cached_evaluation <- function(avg, app_dir, commodity) {
+  path <- evaluation_cache_path(app_dir, commodity)
+  if (!file.exists(path)) return(NULL)
+
+  cached <- tryCatch(readRDS(path), error = function(e) NULL)
+  required <- c(
+    "validation_long", "final_test_long", "validation_metrics",
+    "final_test_metrics", "selected_model_key", "selected_model",
+    "selection_metric", "selection_value", "config", "n_folds", "split"
+  )
+  if (!is.list(cached) || !all(required %in% names(cached))) return(NULL)
+  if (!is.data.frame(cached$final_test_long) ||
+      !"tanggal" %in% names(cached$final_test_long)) return(NULL)
+
+  expected_final <- tryCatch(
+    split_evaluation_periods(avg, cached$config)$final_test,
+    error = function(e) NULL
+  )
+  if (is.null(expected_final) || nrow(expected_final) != nrow(cached$final_test_long)) {
+    return(NULL)
+  }
+  if (!identical(
+    as.character(expected_final$tanggal),
+    as.character(as.Date(cached$final_test_long$tanggal))
+  )) {
+    return(NULL)
+  }
+  cached
+}
+
+build_pipeline <- function(df, bmkg_forecast = NULL,
+                           forecast_horizon = FORECAST_HORIZON,
+                           evaluation_builder = evaluate_pipeline) {
   avg <- prepare_avg_frame(df)
   if (nrow(avg) < 14) stop("Data hasil merge terlalu sedikit untuk dashboard.", call. = FALSE)
   avg <- avg[order(avg$tanggal), ]
 
-  eval_result <- evaluate_pipeline(avg, eval_config())
+  eval_result <- evaluation_builder(avg, eval_config())
   test_metrics <- eval_result$final_test_metrics
   rolling_test_metrics <- eval_result$validation_metrics
   selected_model <- eval_result$selected_model

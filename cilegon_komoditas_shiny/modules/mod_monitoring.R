@@ -65,7 +65,12 @@ mod_monitoring_server <- function(id, state, refresh_dashboard, refresh_interval
 
     output$refreshStatus <- shiny::renderUI({
       snapshot <- state()
-      shiny::req(snapshot)
+      if (is.null(snapshot)) {
+        return(shiny::div(
+          class = "refresh-info",
+          "Menyiapkan data dan model dashboard..."
+        ))
+      }
       shiny::div(
         class = "refresh-info",
         shiny::div(shiny::strong("Komoditas: "), snapshot$commodity),

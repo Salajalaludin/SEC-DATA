@@ -88,9 +88,10 @@ untouched final test. Evaluation is one-step-ahead; H+2/H+3 are operational
 forecast horizons, not separate scored horizons in this protocol. Full details
 are in [`docs/EVALUATION_PROTOCOL.md`](docs/EVALUATION_PROTOCOL.md).
 
-The dashboard uses bounded defaults for startup responsiveness and labels those
-numbers as an in-app preview. The verified metrics below come from the full
-protocol command, not from the bounded preview.
+The dashboard uses a matching full-protocol evaluation cache when the deployment
+bundle contains one; otherwise it falls back to bounded `eval_config()` defaults.
+The verified metrics below come from the full protocol command, not from an
+unverified fallback run.
 
 ## Candidate Models
 
@@ -218,10 +219,29 @@ presented as fresh.
 
 ## Deployment
 
-The deployable application is `cilegon_komoditas_shiny/`. Deployment targets
-and production credentials are intentionally not committed. Configure the
-approved hosting target and secrets outside the repository, then run the same
-test and smoke checks before publishing.
+The deployable application is generated into `deploy_bundle/` so the hosted
+app has the flat layout expected by `app.R`, while source code remains in its
+canonical repository paths. Build the bundle locally with:
+
+    Rscript scripts/build_shinyapps_bundle.R
+
+For shinyapps.io, install `rsconnect` in the local R environment and provide
+`SHINYAPPS_NAME`, `SHINYAPPS_TOKEN`, and `SHINYAPPS_SECRET` without committing
+them. Optional names are `SHINYAPPS_APP_NAME` and `SHINYAPPS_APP_TITLE`.
+Then run:
+
+    Rscript scripts/deploy_shinyapps_placeholder.R
+
+See [deploy_bundle/README.md](deploy_bundle/README.md) for the placeholder
+workflow. Data refresh commits updated static caches separately; redeploy the
+bundle when the hosted app should receive those refreshed caches. The hosted
+workflow. Data refresh commits updated static caches separately; redeploy the
+bundle when the hosted app should receive those refreshed caches. The hosted
+bundle is cache-only and excludes the local ERA5 NetCDF/`terra` updater path.
+The builder copies matching `evaluation_*.rds` artifacts when present, so the
+hosted worker does not repeat expensive rolling refits for the same cache
+snapshot. A changed snapshot is rejected by date matching and falls back to
+the active bounded evaluation path.
 
 ## License
 

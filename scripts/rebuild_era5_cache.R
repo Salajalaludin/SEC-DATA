@@ -24,6 +24,7 @@ end_date <- as.Date(if (length(args) >= 3) args[3] else "2026-06-30")
 
 suppressPackageStartupMessages(library(terra))
 source("R/data_climate.R", local = FALSE)
+source("R/era5_netcdf.R", local = FALSE)
 
 app_cache_dir <- "cilegon_komoditas_shiny/cache"
 primary_path <- file.path(app_cache_dir, "era5_daily_bandung_cilegon.rds")

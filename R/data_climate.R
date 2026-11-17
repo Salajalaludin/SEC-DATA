@@ -1,12 +1,12 @@
 # data_climate.R — ERA5 climate transformation pipeline (Methodology V2, Sprint 1)
 #
-# Centralised, reusable logic for reading ERA5 NetCDF, aligning hourly variables
-# by exact valid_time, computing relative humidity, aggregating to daily climate
-# features, and validating data quality.
+# Cache-safe climate transformations shared by the Shiny runtime and the local
+# ERA5 updater. NetCDF I/O requiring terra lives in R/era5_netcdf.R so the
+# hosted cache-only bundle does not need the native GDAL/terra toolchain.
 #
 # This module is shared by:
 #   - cilegon_komoditas_shiny/update_era5_daily.R  (cache regeneration)
-#   - cilegon_komoditas_shiny/app.R                (fallback NetCDF reading)
+#   - cilegon_komoditas_shiny/app.R                (cache/runtime reading)
 #   - tests/testthat/test-climate-processing.R     (unit tests)
 #
 # Spatial scope (Methodology V2): "Cilegon Local Climate".
@@ -22,7 +22,7 @@
 #' ERA5 climate pipeline configuration.
 #'
 #' Returns a list of constants used across the pipeline:
-#'   - extent:    spatial extent (SpatExtent) for Cilegon Local Climate.
+#'   - extent:    numeric xmin/xmax/ymin/ymax extent for Cilegon Local Climate.
 #'   - tz_utc:    timezone of ERA5 valid_time timestamps (UTC).
 #'   - tz_local:  operational local timezone (Asia/Jakarta).
 #'   - expected_hours_per_day: nominal number of hourly observations per day.
@@ -30,7 +30,7 @@
 #'   - spatial_label: human-readable spatial scope.
 era5_config <- function() {
   list(
-    extent = terra::ext(105.95, 106.15, -6.15, -5.95),
+    extent = c(xmin = 105.95, xmax = 106.15, ymin = -6.15, ymax = -5.95),
     tz_utc = "UTC",
     tz_local = "Asia/Jakarta",
     expected_hours_per_day = 24,
@@ -86,31 +86,8 @@ relative_humidity <- function(temp_c, dewpoint_c) {
 }
 
 # ---------------------------------------------------------------------------
-# Reading and aligning hourly variables
+# Timestamp alignment
 # ---------------------------------------------------------------------------
-
-#' Read one ERA5 variable from a NetCDF file and return a value per layer.
-#'
-#' @param path character, path to NetCDF file.
-#' @param subds character, subdataset name ("t2m", "d2m", "tp").
-#' @param extent SpatExtent to crop to.
-#' @param fun character, spatial aggregation function (default "mean").
-#' @return data.frame with columns valid_time (POSIXct UTC) and value.
-read_era5_variable <- function(path, subds, extent, fun = "mean") {
-  r <- terra::crop(terra::rast(path, subds = subds), extent)
-  raster_time <- if (isTRUE(terra::has.time(r))) terra::time(r) else NULL
-  vt <- if (length(raster_time) == terra::nlyr(r) &&
-            (inherits(raster_time, "POSIXt") || inherits(raster_time, "Date"))) {
-    as.POSIXct(raster_time, tz = era5_config()$tz_utc)
-  } else {
-    parse_era5_valid_time(names(r))
-  }
-  if (length(vt) != terra::nlyr(r) || anyNA(vt) || anyDuplicated(vt)) {
-    stop("Metadata valid_time ERA5 tidak lengkap atau duplikat: ", path, call. = FALSE)
-  }
-  vals <- as.numeric(terra::global(r, fun, na.rm = TRUE)[, 1])
-  data.frame(valid_time = vt, value = vals)
-}
 
 #' Align hourly ERA5 variables by exact valid_time.
 #'
@@ -135,80 +112,6 @@ align_era5_variables <- function(parts) {
   }
   out <- out[order(out$valid_time), , drop = FALSE]
   out
-}
-
-#' Read one ERA5 NetCDF file into timestamp-aligned hourly observations.
-#'
-#' t2m/d2m/tp are aligned by exact valid_time, relative humidity is computed
-#' from timestamp-matched temperature and dewpoint, and the local calendar date
-#' is derived only after alignment. No daily aggregation is performed here.
-#'
-#' @param path character, path to NetCDF file.
-#' @param extent SpatExtent to crop to (default era5_config()$extent).
-#' @return data.frame: valid_time (POSIXct UTC), tanggal (Date Asia/Jakarta),
-#'   suhu (C), dewpoint (C), kelembaban (RH %), hujan (mm).
-read_era5_hourly_from_nc <- function(path, extent = era5_config()$extent) {
-  subdatasets <- tryCatch(names(terra::sds(path)), error = function(e) character())
-  has_var <- function(var) var %in% subdatasets
-
-  parts <- list()
-  if (has_var("t2m")) {
-    parts$suhu <- read_era5_variable(path, "t2m", extent)
-    parts$suhu$value <- parts$suhu$value - 273.15
-  }
-  if (has_var("d2m")) {
-    parts$dewpoint <- read_era5_variable(path, "d2m", extent)
-    parts$dewpoint$value <- parts$dewpoint$value - 273.15
-  }
-  if (has_var("tp")) {
-    parts$hujan <- read_era5_variable(path, "tp", extent)
-    parts$hujan$value <- pmax(0, parts$hujan$value * 1000)
-  }
-  if (length(parts) == 0) {
-    stop("Tidak ada variabel ERA5 yang dikenali di ", path, call. = FALSE)
-  }
-
-  hourly <- align_era5_variables(parts)
-  hourly$kelembaban <- relative_humidity(hourly$suhu, hourly$dewpoint)
-  hourly$tanggal <- era5_local_tanggal(hourly$valid_time)
-  hourly
-}
-
-#' Read a range of ERA5 NetCDF files into a single aligned hourly frame.
-#'
-#' @param dir_path character, directory (searched recursively) holding .nc files.
-#' @param start_date Date, first month included.
-#' @param end_date Date, last month included.
-#' @param extent SpatExtent to crop to (default era5_config()$extent).
-#' @return data.frame of aligned hourly observations, or an empty frame.
-read_era5_hourly_range <- function(dir_path, start_date, end_date,
-                                   extent = era5_config()$extent) {
-  files <- list.files(dir_path, pattern = "\\.nc$", recursive = TRUE, full.names = TRUE)
-  ym_text <- sub(".*_(20[0-9]{2})_([0-9]{2})(_[0-9]{2})?\\.nc$", "\\1-\\2-01", basename(files))
-  file_month <- as.Date(ym_text)
-  start_month <- as.Date(format(start_date, "%Y-%m-01"))
-  end_month <- as.Date(format(end_date, "%Y-%m-01"))
-  files <- sort(files[!is.na(file_month) & file_month >= start_month & file_month <= end_month])
-
-  chunks <- list()
-  for (f in files) {
-    ok <- tryCatch({
-      df <- read_era5_hourly_from_nc(f, extent)
-      if (is.data.frame(df) && nrow(df) > 0) chunks[[length(chunks) + 1]] <- df
-      TRUE
-    }, error = function(e) {
-      warning("Gagal membaca file ERA5: ", f, " -> ", conditionMessage(e))
-      FALSE
-    })
-    invisible(ok)
-  }
-  if (length(chunks) == 0) {
-    return(data.frame(valid_time = as.POSIXct(numeric(), origin = "1970-01-01", tz = era5_config()$tz_utc),
-                      tanggal = as.Date(character()),
-                      suhu = numeric(), dewpoint = numeric(),
-                      kelembaban = numeric(), hujan = numeric()))
-  }
-  do.call(rbind, chunks)
 }
 
 # ---------------------------------------------------------------------------
@@ -373,37 +276,4 @@ blend_climate_sources <- function(climate_hist, bmkg_forecast, market_dates) {
   needed_dates <- market_dates[market_dates %in% combined$tanggal]
   combined <- combined[combined$tanggal %in% needed_dates, , drop = FALSE]
   combined[order(combined$tanggal), ]
-}
-
-read_era5_daily <- function(dir_path, start_date, end_date, cache_path,
-                            extent = era5_config()$extent) {
-  cache_key <- paste(
-    start_date,
-    end_date,
-    normalizePath(dir_path, winslash = "/", mustWork = FALSE),
-    as.vector(extent)
-  )
-  if (file.exists(cache_path)) {
-    cache <- readRDS(cache_path)
-    if (identical(cache$key, cache_key) && valid_climate_frame(cache$data)) return(cache$data)
-  }
-
-  hourly <- read_era5_hourly_range(dir_path, start_date, end_date, extent)
-  if (!is.data.frame(hourly) || nrow(hourly) == 0) {
-    climate <- data.frame(
-      tanggal = as.Date(character()),
-      suhu_puncak = numeric(),
-      kelembaban = numeric(),
-      hujan = numeric()
-    )
-  } else {
-    climate <- aggregate_era5_daily(hourly)
-    climate <- climate[climate$tanggal >= start_date & climate$tanggal <= end_date, , drop = FALSE]
-  }
-
-  if (valid_climate_frame(climate)) {
-    dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
-    saveRDS(list(key = cache_key, data = climate), cache_path)
-  }
-  climate
 }
